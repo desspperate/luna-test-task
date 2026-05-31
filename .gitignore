@@ -1,0 +1,9 @@
+.idea
+.venv
+.env
+__pycache__
+src/payments_processor.egg-info
+*.py[cod]
+.installed
+.pytest_cache
+.ruff_cache
