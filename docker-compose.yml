@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+    volumes:
+      - postgres-vol:/var/lib/postgresql/18/docker
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payments-net
+
+  migration:
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - payments-net
+
+volumes:
+  postgres-vol:
+    driver: local
+
+networks:
+  payments-net:
+    driver: bridge
