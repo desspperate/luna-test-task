@@ -30,6 +30,37 @@ services:
     networks:
       - payments-net
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    restart: unless-stopped
+    volumes:
+      - rabbitmq-vol:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payments-net
+
+  topology:
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    command: python -m payments_processor.messaging
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - payments-net
+
   api:
     build:
       dockerfile: Dockerfile
@@ -50,6 +81,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      topology:
+        condition: service_completed_successfully
       migration:
         condition: service_completed_successfully
     networks:
@@ -57,6 +90,8 @@ services:
 
 volumes:
   postgres-vol:
+    driver: local
+  rabbitmq-vol:
     driver: local
 
 networks:

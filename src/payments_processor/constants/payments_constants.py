@@ -11,3 +11,12 @@ class PaymentsConstants:
 
     IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
     API_V1_PREFIX = "/api/v1"
+
+    EXCHANGE_PAYMENTS = "payments"
+    QUEUE_PAYMENTS_NEW = "payments.new"
+    QUEUE_PAYMENTS_DLQ = "payments.dlq"
+    QUEUE_PAYMENTS_RETRY_PREFIX = "payments.retry."
+    RETRY_TTL_MS_BY_ATTEMPT: tuple[int] = (2_000, 8_000, 32_000)
+
+    PAYMENT_CREATED_ROUTING_KEY = "payment.created"
+    PAYMENT_CREATED_EVENT_TYPE = "payment.created"
