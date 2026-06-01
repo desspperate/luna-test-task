@@ -30,6 +30,31 @@ services:
     networks:
       - payments-net
 
+  api:
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:80"
+    restart: unless-stopped
+    command: uvicorn payments_processor.main:app --host 0.0.0.0 --port 80 --reload
+    volumes:
+      - ./src/payments_processor:/app/src/payments_processor
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
 volumes:
   postgres-vol:
     driver: local

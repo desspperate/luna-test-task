@@ -5,11 +5,16 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
+    "dishka>=1.10.1",
+    "fastapi>=0.136.3",
     "greenlet>=3.5.1",
+    "loguru>=0.7.3",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "sqlalchemy>=2.0.50",
     "uuid-utils>=0.16.0",
+    "uvicorn>=0.48.0",
+    "uvloop>=0.22.1",
 ]
 
 [tool.uv]
