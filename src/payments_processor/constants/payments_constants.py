@@ -8,3 +8,6 @@ class PaymentsConstants:
     OUTBOX_AGGREGATE_TYPE_MAX_LEN = 64
     OUTBOX_EVENT_TYPE_MAX_LEN = 128
     OUTBOX_ROUTING_KEY_MAX_LEN = 128
+
+    IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+    API_V1_PREFIX = "/api/v1"

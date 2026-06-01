@@ -38,7 +38,6 @@ class Payment(Base):
         nullable=True,
     )
     meta: Mapped[dict[str, Any] | None] = mapped_column(
-        "metadata_json",
         JSONB,
         nullable=True,
     )

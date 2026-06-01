@@ -8,7 +8,8 @@ from loguru import logger
 
 from payments_processor.configs import AppConfig, PGConfig
 from payments_processor.di import make_payments_container
-from payments_processor.routers import ping_pong_router
+from payments_processor.error_handlers import register_error_handler
+from payments_processor.routers import payment_router, ping_pong_router
 from payments_processor.utils import print_pd_settings
 
 
@@ -42,6 +43,9 @@ def create_app() -> FastAPI:
     fastapi_integration.setup_dishka(container=container, app=application)
 
     application.include_router(ping_pong_router)
+    application.include_router(payment_router)
+
+    register_error_handler(application)
 
     return application
 

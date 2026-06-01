@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("amount", sa.Numeric(precision=20, scale=4), nullable=False),
         sa.Column("currency", sa.Enum("RUB", "USD", "EUR", name="currencyenum", native_enum=False), nullable=False),
         sa.Column("description", sa.String(length=1000), nullable=True),
-        sa.Column("metadata_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column(
             "status",
             sa.Enum("PENDING", "SUCCEEDED", "FAILED", name="paymentstatusenum", native_enum=False),
