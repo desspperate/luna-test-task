@@ -6,7 +6,7 @@ from dishka.integrations import fastapi as fastapi_integration
 from fastapi import FastAPI
 from loguru import logger
 
-from payments_processor.configs import AppConfig, PGConfig, RMQConfig
+from payments_processor.configs import AppConfig, PGConfig, RMQConfig, WebhookConfig
 from payments_processor.di import make_payments_container
 from payments_processor.error_handlers import register_error_handler
 from payments_processor.middlewares import register_api_key_middleware
@@ -31,6 +31,8 @@ def create_app() -> FastAPI:
         print_pd_settings(pg_config)
         rmq_config = await container.get(RMQConfig)
         print_pd_settings(rmq_config)
+        webhook_config = await container.get(WebhookConfig)
+        print_pd_settings(webhook_config)
 
         yield
 

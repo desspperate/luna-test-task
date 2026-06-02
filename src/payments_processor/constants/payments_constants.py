@@ -24,5 +24,13 @@ class PaymentsConstants:
 
     PAYMENT_CREATED_ROUTING_KEY = "payment.created"
     PAYMENT_CREATED_EVENT_TYPE = "payment.created"
+    PAYMENT_PROCESSED_EVENT_TYPE = "payment.processed"
 
     PAYMENT_AGGREGATE_TYPE = "payment"
+
+    WEBHOOK_SIGNATURE_HEADER = "X-Signature"
+    WEBHOOK_TIMESTAMP_HEADER = "X-Timestamp"
+    WEBHOOK_ID_HEADER = "X-Webhook-Id"
+    WEBHOOK_EVENT_TYPE_HEADER = "X-Event-Type"
+    WEBHOOK_SIGNATURE_PREFIX = "sha256="
+    WEBHOOK_USER_AGENT = "LunaTestTask/1.0"

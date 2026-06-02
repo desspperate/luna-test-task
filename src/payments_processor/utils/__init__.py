@@ -1,5 +1,5 @@
 from .base_repository import BaseRepository
-from .crypto import verify_api_key
+from .crypto import sign_webhook, verify_api_key
 from .fk_detail_pattern import FK_DETAIL_PATTERN
 from .get_asyncpg_error import get_asyncpg_error
 from .handle_integrity_helpers import HandleIntegrityHelpers
@@ -12,6 +12,7 @@ __all__ = [
     "HandleIntegrityHelpers",
     "get_asyncpg_error",
     "print_pd_settings",
+    "sign_webhook",
     "uuid7",
     "verify_api_key",
 ]
