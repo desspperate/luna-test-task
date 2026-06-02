@@ -88,6 +88,27 @@ services:
     networks:
       - payments-net
 
+  outbox-dispatcher:
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: python -m payments_processor.outbox_dispatcher.main
+    volumes:
+      - ./src/payments_processor:/app/src/payments_processor
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+      topology:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
 volumes:
   postgres-vol:
     driver: local

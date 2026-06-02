@@ -2,7 +2,7 @@ from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payments_processor.actions import PaymentAction
-from payments_processor.repositories import PaymentRepository
+from payments_processor.repositories import OutboxRepository, PaymentRepository
 from payments_processor.services import PaymentService
 
 
@@ -22,9 +22,11 @@ class PaymentProvider(Provider):
     def get_payment_service(
             self,
             payment_repository: PaymentRepository,
+            outbox_repository: OutboxRepository,
     ) -> PaymentService:
         return PaymentService(
             payment_repository=payment_repository,
+            outbox_repository=outbox_repository,
         )
 
     @provide(scope=Scope.REQUEST)

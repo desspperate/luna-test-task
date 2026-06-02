@@ -10,7 +10,11 @@ class PaymentsConstants:
     OUTBOX_ROUTING_KEY_MAX_LEN = 128
 
     IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+    API_KEY_HEADER = "X-API-Key"
     API_V1_PREFIX = "/api/v1"
+
+    HEALTH_PATH = "/health"
+    DOCS_PATHS: frozenset[str] = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
 
     EXCHANGE_PAYMENTS = "payments"
     QUEUE_PAYMENTS_NEW = "payments.new"
@@ -20,3 +24,5 @@ class PaymentsConstants:
 
     PAYMENT_CREATED_ROUTING_KEY = "payment.created"
     PAYMENT_CREATED_EVENT_TYPE = "payment.created"
+
+    PAYMENT_AGGREGATE_TYPE = "payment"

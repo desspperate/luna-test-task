@@ -8,6 +8,7 @@ from asyncpg import CheckViolationError, UniqueViolationError
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
+from payments_processor.constants import PaymentsConstants
 from payments_processor.enums import CurrencyEnum
 from payments_processor.errors import (
     IdempotencyKeyConflictError,
@@ -15,7 +16,7 @@ from payments_processor.errors import (
     UnhandledIntegrityError,
 )
 from payments_processor.models import Payment
-from payments_processor.repositories import PaymentRepository
+from payments_processor.repositories import OutboxRepository, PaymentRepository
 from payments_processor.utils import HandleIntegrityHelpers, get_asyncpg_error
 
 
@@ -36,8 +37,13 @@ async def handle_payment_integrity() -> AsyncIterator[None]:
 
 
 class PaymentService:
-    def __init__(self, payment_repository: PaymentRepository) -> None:
+    def __init__(
+            self,
+            payment_repository: PaymentRepository,
+            outbox_repository: OutboxRepository,
+    ) -> None:
         self.payment_repository = payment_repository
+        self.outbox_repository = outbox_repository
 
     async def create_payment(
             self,
@@ -73,6 +79,13 @@ class PaymentService:
                 meta=meta,
                 idempotency_key=idempotency_key,
                 webhook_url=webhook_url,
+            )
+            await self.outbox_repository.enqueue(
+                aggregate_type=PaymentsConstants.PAYMENT_AGGREGATE_TYPE,
+                aggregate_id=new_payment.id,
+                event_type=PaymentsConstants.PAYMENT_CREATED_EVENT_TYPE,
+                routing_key=PaymentsConstants.PAYMENT_CREATED_ROUTING_KEY,
+                payload={"payment_id": str(new_payment.id)},
             )
             await self.payment_repository.session.flush()
 
