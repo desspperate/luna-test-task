@@ -1,19 +1,22 @@
+from typing import Annotated
 from uuid import UUID
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import DishkaRoute
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Header, status, Depends
 from loguru import logger
 
 from payments_processor.actions import PaymentAction
 from payments_processor.constants import PaymentsConstants
 from payments_processor.models import Payment
 from payments_processor.schemas import PaymentCreate, PaymentCreatedResponse, PaymentRead
+from payments_processor.utils import track_api_key_header
 
 router = APIRouter(
     prefix=f"{PaymentsConstants.API_V1_PREFIX}/payments",
     tags=["Payments"],
     route_class=DishkaRoute,
+    dependencies=[Depends(track_api_key_header)],
 )
 
 

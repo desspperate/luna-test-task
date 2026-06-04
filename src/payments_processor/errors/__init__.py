@@ -12,7 +12,7 @@ from .payments_errors import (
     PaymentsValidationError,
 )
 from .unhandled_integrity_error import UnhandledIntegrityError
-from .webhook_errors import WebhookError, WebhookSendError
+from .webhook_errors import WebhookError, WebhookSendError, WebhookUrlNotAllowedError
 
 __all__ = [
     "AuthError",
@@ -33,4 +33,5 @@ __all__ = [
     "UnhandledIntegrityError",
     "WebhookError",
     "WebhookSendError",
+    "WebhookUrlNotAllowedError",
 ]

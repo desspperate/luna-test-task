@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -9,7 +10,7 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
 from payments_processor.constants import PaymentsConstants
-from payments_processor.enums import CurrencyEnum
+from payments_processor.enums import CurrencyEnum, PaymentStatusEnum, ProcessingOutcomeEnum
 from payments_processor.errors import (
     IdempotencyKeyConflictError,
     PaymentNotFoundError,
@@ -17,7 +18,7 @@ from payments_processor.errors import (
 )
 from payments_processor.models import Payment
 from payments_processor.repositories import OutboxRepository, PaymentRepository
-from payments_processor.utils import HandleIntegrityHelpers, get_asyncpg_error
+from payments_processor.utils import HandleIntegrityHelpers, SSRFGuard, get_asyncpg_error
 
 
 @asynccontextmanager
@@ -41,9 +42,11 @@ class PaymentService:
             self,
             payment_repository: PaymentRepository,
             outbox_repository: OutboxRepository,
+            ssrf_guard: SSRFGuard,
     ) -> None:
         self.payment_repository = payment_repository
         self.outbox_repository = outbox_repository
+        self.ssrf_guard = ssrf_guard
 
     async def create_payment(
             self,
@@ -58,6 +61,8 @@ class PaymentService:
             :returns payment, is_new_payment
         """
         logger.info(f"Creating payment with idempotency_key='{idempotency_key}'")
+
+        await self.ssrf_guard.validate_url(url=webhook_url)
 
         existing = await self.payment_repository.get_by_idempotency_key(idempotency_key=idempotency_key)
         if existing is not None:
@@ -94,6 +99,27 @@ class PaymentService:
     async def get_payment(self, payment_id: UUID) -> Payment:
         logger.info(f"Getting payment: {payment_id}")
         payment = await self.payment_repository.get_by_id(obj_id=payment_id)
+        if payment is None:
+            raise PaymentNotFoundError(payment_id=payment_id)
+        return payment
+
+    async def apply_processing_outcome(
+            self,
+            payment_id: UUID,
+            outcome: ProcessingOutcomeEnum,
+    ) -> Payment:
+        status = (
+            PaymentStatusEnum.SUCCEEDED
+            if outcome == ProcessingOutcomeEnum.SUCCEEDED
+            else PaymentStatusEnum.FAILED
+        )
+        processed_at = datetime.now(tz=UTC)
+        logger.info(f"Applying processing outcome to payment {payment_id}: status={status.name}")
+        payment = await self.payment_repository.update_processing_outcome(
+            payment_id=payment_id,
+            status=status,
+            processed_at=processed_at,
+        )
         if payment is None:
             raise PaymentNotFoundError(payment_id=payment_id)
         return payment

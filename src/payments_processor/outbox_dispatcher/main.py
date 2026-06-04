@@ -1,17 +1,21 @@
 import asyncio
-import signal
+import contextlib
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from dishka import AsyncContainer
-from faststream.rabbit import RabbitBroker
+from dishka.integrations import fastapi as fastapi_integration
+from fastapi import FastAPI
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payments_processor.configs import AppConfig, OutboxDispatcherConfig, PGConfig, RMQConfig
 from payments_processor.di import make_payments_container
 from payments_processor.messaging import PaymentEventPublisher
+from payments_processor.routers import worker_health_router
 from payments_processor.services import OutboxService
-from payments_processor.utils import print_pd_settings
+from payments_processor.utils import HealthState, print_pd_settings
 
 
 async def _process_batch(
@@ -41,19 +45,13 @@ async def _process_batch(
 
 async def _run_loop(
         container: AsyncContainer,
+        publisher: PaymentEventPublisher,
         dispatcher_config: OutboxDispatcherConfig,
-        broker: RabbitBroker,
+        health_state: HealthState,
 ) -> None:
-    publisher = PaymentEventPublisher(broker=broker)
-    shutdown = asyncio.Event()
+    logger.info("Outbox dispatcher loop started")
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, shutdown.set)
-
-    logger.info("Outbox dispatcher started")
-
-    while not shutdown.is_set():
+    while True:
         try:
             async with container() as request_container:
                 processed = await _process_batch(
@@ -61,44 +59,72 @@ async def _run_loop(
                     publisher=publisher,
                     batch_size=dispatcher_config.OUTBOX_BATCH_SIZE,
                 )
-        except Exception as e:
-            logger.exception(f"Outbox dispatcher iteration failed: {e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Outbox dispatcher iteration failed")
             processed = 0
 
+        health_state.heartbeat()
+
         if processed < dispatcher_config.OUTBOX_BATCH_SIZE:
-            try:
-                await asyncio.wait_for(
-                    shutdown.wait(),
-                    timeout=dispatcher_config.OUTBOX_POLL_INTERVAL_SECONDS,
-                )
-            except TimeoutError:
-                pass
-
-    logger.info("Outbox dispatcher shutting down")
+            await asyncio.sleep(dispatcher_config.OUTBOX_POLL_INTERVAL_SECONDS)
 
 
-async def main() -> None:
+def create_app() -> FastAPI:
     logger.remove()
     logger.add(sys.stderr, serialize=True)
 
-    app_config = AppConfig()  # type: ignore[call-args]
+    app_config = AppConfig()  # type: ignore[call-arg]
     container = make_payments_container(app_config_instance=app_config)
-    try:
+    dispatcher_config = OutboxDispatcherConfig()  # type: ignore[call-arg]
+    health_state = HealthState(
+        stale_after_seconds=dispatcher_config.OUTBOX_POLL_INTERVAL_SECONDS * 10,
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        logger.info("Outbox dispatcher starting up...")
+
         print_pd_settings(app_config)
         print_pd_settings(await container.get(PGConfig))
         print_pd_settings(await container.get(RMQConfig))
-        dispatcher_config = await container.get(OutboxDispatcherConfig)
         print_pd_settings(dispatcher_config)
 
-        broker = await container.get(RabbitBroker)
-        await _run_loop(
-            container=container,
-            dispatcher_config=dispatcher_config,
-            broker=broker,
+        publisher = await container.get(PaymentEventPublisher)
+
+        dispatcher_task = asyncio.create_task(
+            _run_loop(
+                container=container,
+                publisher=publisher,
+                dispatcher_config=dispatcher_config,
+                health_state=health_state,
+            ),
+            name="outbox_dispatcher_loop",
         )
-    finally:
-        await container.close()
+        health_state.mark_started()
+        logger.info("Outbox dispatcher started")
+
+        try:
+            yield
+        finally:
+            logger.info("Outbox dispatcher shutting down...")
+            dispatcher_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await dispatcher_task
+            await container.close()
+
+    application = FastAPI(
+        debug=app_config.DEBUG,
+        title="Outbox Dispatcher",
+        lifespan=lifespan,
+    )
+    application.state.health = health_state
+
+    fastapi_integration.setup_dishka(container=container, app=application)
+    application.include_router(worker_health_router)
+
+    return application
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+app = create_app()

@@ -31,7 +31,8 @@ services:
       - payments-net
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    hostname: rmq-node
+    image: rabbitmq:4.3-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RMQ_PASSWORD}
@@ -42,7 +43,7 @@ services:
     volumes:
       - rabbitmq-vol:/var/lib/rabbitmq
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,7 +55,7 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
-    command: python -m payments_processor.messaging
+    command: python -m payments_processor.messaging.main
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -94,9 +95,42 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-    command: python -m payments_processor.outbox_dispatcher.main
+    command: uvicorn payments_processor.outbox_dispatcher.main:app --host 0.0.0.0 --port 80
     volumes:
       - ./src/payments_processor:/app/src/payments_processor
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+      topology:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
+  consumer:
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: uvicorn payments_processor.consumer.main:app --host 0.0.0.0 --port 80
+    volumes:
+      - ./src/payments_processor:/app/src/payments_processor
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     depends_on:
       postgres:
         condition: service_healthy

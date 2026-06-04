@@ -15,7 +15,7 @@ def register_api_key_middleware(app: FastAPI, api_key: SecretStr) -> None:
     @app.middleware("http")
     async def _api_key_middleware(request: Request, call_next: CallNext) -> Response:
         path = request.url.path
-        if path == PaymentsConstants.HEALTH_PATH or path in PaymentsConstants.DOCS_PATHS:
+        if path in PaymentsConstants.PUBLIC_PROBE_PATHS or path in PaymentsConstants.DOCS_PATHS:
             return await call_next(request)
 
         provided = request.headers.get(PaymentsConstants.API_KEY_HEADER)

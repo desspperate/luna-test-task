@@ -10,7 +10,7 @@ from payments_processor.configs import AppConfig, PGConfig, RMQConfig, WebhookCo
 from payments_processor.di import make_payments_container
 from payments_processor.error_handlers import register_error_handler
 from payments_processor.middlewares import register_api_key_middleware
-from payments_processor.routers import payment_router, ping_pong_router
+from payments_processor.routers import api_health_router, payment_router
 from payments_processor.utils import print_pd_settings
 
 
@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
 
     register_api_key_middleware(app=application, api_key=app_config.API_KEY)
 
-    application.include_router(ping_pong_router)
+    application.include_router(api_health_router)
     application.include_router(payment_router)
 
     register_error_handler(application)

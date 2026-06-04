@@ -14,19 +14,28 @@ class PaymentsConstants:
     API_V1_PREFIX = "/api/v1"
 
     HEALTH_PATH = "/health"
+    READY_PATH = "/ready"
+    PUBLIC_PROBE_PATHS: frozenset[str] = frozenset({HEALTH_PATH, READY_PATH})
     DOCS_PATHS: frozenset[str] = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
 
     EXCHANGE_PAYMENTS = "payments"
+    EXCHANGE_PAYMENTS_DLX = "payments.dlx"
     QUEUE_PAYMENTS_NEW = "payments.new"
     QUEUE_PAYMENTS_DLQ = "payments.dlq"
     QUEUE_PAYMENTS_RETRY_PREFIX = "payments.retry."
-    RETRY_TTL_MS_BY_ATTEMPT: tuple[int] = (2_000, 8_000, 32_000)
+    RETRY_TTL_MS_BY_ATTEMPT: tuple[int, ...] = (2_000, 8_000, 32_000)
 
     PAYMENT_CREATED_ROUTING_KEY = "payment.created"
+    PAYMENT_FAILED_ROUTING_KEY = "payment.failed"
+    PAYMENT_SAFETY_NET_ROUTING_KEY = "payment.safety-net"
     PAYMENT_CREATED_EVENT_TYPE = "payment.created"
     PAYMENT_PROCESSED_EVENT_TYPE = "payment.processed"
 
     PAYMENT_AGGREGATE_TYPE = "payment"
+
+    RETRY_COUNT_HEADER = "x-retry-count"
+    RETRY_REASON_HEADER = "x-retry-reason"
+    DLQ_REASON_HEADER = "x-dlq-reason"
 
     WEBHOOK_SIGNATURE_HEADER = "X-Signature"
     WEBHOOK_TIMESTAMP_HEADER = "X-Timestamp"

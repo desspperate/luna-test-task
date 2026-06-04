@@ -9,7 +9,7 @@ from payments_processor.constants import PaymentsConstants
 from payments_processor.errors import WebhookSendError
 from payments_processor.models import Payment
 from payments_processor.schemas import WebhookPayload
-from payments_processor.utils import sign_webhook, uuid7
+from payments_processor.utils import SSRFGuard, sign_webhook, uuid7
 
 
 class WebhookService:
@@ -17,11 +17,15 @@ class WebhookService:
             self,
             http_client: httpx.AsyncClient,
             webhook_config: WebhookConfig,
+            ssrf_guard: SSRFGuard,
     ) -> None:
         self.http_client = http_client
         self.webhook_config = webhook_config
+        self.ssrf_guard = ssrf_guard
 
     async def send(self, payment: Payment) -> None:
+        await self.ssrf_guard.validate_url(url=payment.webhook_url)
+
         event_id = uuid7()
         body = self._build_body(payment=payment, event_id=event_id)
         ts = int(datetime.now(tz=UTC).timestamp())

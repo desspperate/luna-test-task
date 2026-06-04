@@ -1,10 +1,12 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from payments_processor.enums import CurrencyEnum
+from payments_processor.enums import CurrencyEnum, PaymentStatusEnum
 from payments_processor.models import Payment
 from payments_processor.utils import BaseRepository
 
@@ -41,6 +43,21 @@ class PaymentRepository(BaseRepository[Payment]):
         statement = (
             select(Payment)
             .where(Payment.idempotency_key == idempotency_key)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def update_processing_outcome(
+            self,
+            payment_id: UUID,
+            status: PaymentStatusEnum,
+            processed_at: datetime,
+    ) -> Payment | None:
+        statement = (
+            update(Payment)
+            .where(Payment.id == payment_id)
+            .values(status=status, processed_at=processed_at)
+            .returning(Payment)
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()

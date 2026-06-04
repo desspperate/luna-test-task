@@ -26,6 +26,22 @@ class PaymentEventPublisher:
             headers=headers or {},
         )
 
+    async def publish_to_dlx(
+            self,
+            routing_key: str,
+            payload: dict[str, Any],
+            headers: dict[str, Any] | None = None,
+    ) -> None:
+        logger.debug(f"Publishing to '{PaymentsConstants.EXCHANGE_PAYMENTS_DLX}' with routing_key='{routing_key}'")
+        await self.broker.publish(
+            message=payload,
+            exchange=PaymentsConstants.EXCHANGE_PAYMENTS_DLX,
+            routing_key=routing_key,
+            persist=True,
+            mandatory=True,
+            headers=headers or {},
+        )
+
     async def publish_to_queue(
             self,
             queue: str,

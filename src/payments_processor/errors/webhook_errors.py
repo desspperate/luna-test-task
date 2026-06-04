@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from .payments_errors import PaymentsExternalServiceError
+from .payments_errors import PaymentsExternalServiceError, PaymentsValidationError
 
 
 class WebhookError(Exception):
@@ -27,5 +27,28 @@ class WebhookSendError(WebhookError, PaymentsExternalServiceError):
         super().__init__(
             code="WEBHOOK_SEND_FAILED",
             message="Failed to deliver webhook",
+            details=details,
+        )
+
+
+class WebhookUrlNotAllowedError(WebhookError, PaymentsValidationError):
+    def __init__(
+            self,
+            url: str,
+            reason: str,
+            resolved_ip: str | None = None,
+    ) -> None:
+        self.url = url
+        self.reason = reason
+        self.resolved_ip = resolved_ip
+        details: dict[str, Any] = {
+            "url": url,
+            "reason": reason,
+        }
+        if resolved_ip is not None:
+            details["resolved_ip"] = resolved_ip
+        super().__init__(
+            code="WEBHOOK_URL_NOT_ALLOWED",
+            message="Webhook URL is not allowed",
             details=details,
         )
