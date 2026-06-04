@@ -19,4 +19,11 @@ COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 
 ENV PATH="/app/.venv/bin:$PATH"
+
 ENV PYTHONPATH="/app/src"
+
+CMD ["gunicorn", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--workers", "4", \
+     "payments_processor.main:app", \
+     "--bind", "0.0.0.0:80"]

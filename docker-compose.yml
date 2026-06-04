@@ -1,5 +1,6 @@
 services:
   postgres:
+    profiles: [ "dev", "prod" ]
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${PG_USER}
@@ -18,19 +19,8 @@ services:
     networks:
       - payments-net
 
-  migration:
-    build:
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    command: alembic upgrade head
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - payments-net
-
   rabbitmq:
+    profiles: [ "dev", "prod" ]
     hostname: rmq-node
     image: rabbitmq:4.3-management-alpine
     environment:
@@ -43,18 +33,38 @@ services:
     volumes:
       - rabbitmq-vol:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "check_running" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - payments-net
 
-  topology:
+  migration-dev:
+    profiles: [ "dev" ]
     build:
       dockerfile: Dockerfile
     env_file:
       - .env
+    volumes:
+      - ./src/payments_processor:/app/src/payments_processor
+      - ./alembic.ini:/app/alembic.ini
+      - ./alembic:/app/alembic
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - payments-net
+
+  topology-dev:
+    profiles: [ "dev" ]
+    build:
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./src/payments_processor:/app/src/payments_processor
     command: python -m payments_processor.messaging.main
     depends_on:
       rabbitmq:
@@ -62,7 +72,8 @@ services:
     networks:
       - payments-net
 
-  api:
+  api-dev:
+    profiles: [ "dev" ]
     build:
       dockerfile: Dockerfile
     env_file:
@@ -82,20 +93,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      topology:
+      topology-dev:
         condition: service_completed_successfully
-      migration:
+      migration-dev:
         condition: service_completed_successfully
     networks:
       - payments-net
 
-  outbox-dispatcher:
+  outbox-dispatcher-dev:
+    profiles: [ "dev" ]
     build:
       dockerfile: Dockerfile
     env_file:
       - .env
     restart: unless-stopped
-    command: uvicorn payments_processor.outbox_dispatcher.main:app --host 0.0.0.0 --port 80
+    command: uvicorn payments_processor.outbox_dispatcher.main:app --host 0.0.0.0 --port 80 --reload
     volumes:
       - ./src/payments_processor:/app/src/payments_processor
     healthcheck:
@@ -109,20 +121,21 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      migration:
+      migration-dev:
         condition: service_completed_successfully
-      topology:
+      topology-dev:
         condition: service_completed_successfully
     networks:
       - payments-net
 
-  consumer:
+  consumer-dev:
+    profiles: [ "dev" ]
     build:
       dockerfile: Dockerfile
     env_file:
       - .env
     restart: unless-stopped
-    command: uvicorn payments_processor.consumer.main:app --host 0.0.0.0 --port 80
+    command: uvicorn payments_processor.consumer.main:app --host 0.0.0.0 --port 80 --reload
     volumes:
       - ./src/payments_processor:/app/src/payments_processor
     healthcheck:
@@ -136,9 +149,107 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      migration:
+      migration-dev:
         condition: service_completed_successfully
-      topology:
+      topology-dev:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
+  migration-prod:
+    profiles: [ "prod" ]
+    image: ghcr.io/desspperate/luna-test-task:latest
+    env_file:
+      - .env
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - payments-net
+
+  topology-prod:
+    profiles: [ "prod" ]
+    image: ghcr.io/desspperate/luna-test-task:latest
+    env_file:
+      - .env
+    command: python -m payments_processor.messaging.main
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - payments-net
+
+  api-prod:
+    profiles: [ "prod" ]
+    image: ghcr.io/desspperate/luna-test-task:latest
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:80"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      topology-prod:
+        condition: service_completed_successfully
+      migration-prod:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
+  outbox-dispatcher-prod:
+    profiles: [ "prod" ]
+    image: ghcr.io/desspperate/luna-test-task:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: gunicorn -k uvicorn.workers.UvicornWorker --workers 1 payments_processor.outbox_dispatcher.main:app --bind 0.0.0.0:80
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration-prod:
+        condition: service_completed_successfully
+      topology-prod:
+        condition: service_completed_successfully
+    networks:
+      - payments-net
+
+  consumer-prod:
+    profiles: [ "prod" ]
+    image: ghcr.io/desspperate/luna-test-task:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: gunicorn -k uvicorn.workers.UvicornWorker --workers 1 payments_processor.consumer.main:app --bind 0.0.0.0:80
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration-prod:
+        condition: service_completed_successfully
+      topology-prod:
         condition: service_completed_successfully
     networks:
       - payments-net
