@@ -16,13 +16,14 @@ from payments_processor.errors import (
     PaymentNotFoundError,
     UnhandledIntegrityError,
 )
+from payments_processor.errors.payment_errors import PaymentAmountNotPositiveError
 from payments_processor.models import Payment
 from payments_processor.repositories import OutboxRepository, PaymentRepository
 from payments_processor.utils import HandleIntegrityHelpers, SSRFGuard, get_asyncpg_error
 
 
 @asynccontextmanager
-async def handle_payment_integrity() -> AsyncGenerator[None]:
+async def handle_payment_integrity(idempotency_key: str) -> AsyncGenerator[None]:
     try:
         yield
     except IntegrityError as e:
@@ -33,6 +34,11 @@ async def handle_payment_integrity() -> AsyncGenerator[None]:
         if isinstance(asyncpg_error, UniqueViolationError | CheckViolationError):
             constraint = HandleIntegrityHelpers.get_constraint(asyncpg_error, e)
             logger.debug(f"Integrity violation on constraint: {constraint}")
+
+            if constraint == Payment.UQ_PAYMENT_IDEMPOTENCY_KEY:
+                raise IdempotencyKeyConflictError(idempotency_key=idempotency_key) from e
+            if constraint == Payment.CK_PAYMENT_AMOUNT_POSITIVE:
+                raise PaymentAmountNotPositiveError from e
 
         raise UnhandledIntegrityError from e
 
@@ -76,7 +82,7 @@ class PaymentService:
             logger.info(f"Idempotent hit: returning existing payment {existing.id}")
             return existing, False
 
-        async with handle_payment_integrity():
+        async with handle_payment_integrity(idempotency_key=idempotency_key):
             new_payment = await self.payment_repository.create_payment(
                 amount=amount,
                 currency=currency,

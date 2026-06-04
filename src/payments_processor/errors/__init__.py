@@ -1,5 +1,10 @@
 from .auth_errors import AuthError, InvalidAPIKeyError, MissingAPIKeyError
-from .payment_errors import IdempotencyKeyConflictError, PaymentError, PaymentNotFoundError
+from .payment_errors import (
+    IdempotencyKeyConflictError,
+    PaymentAmountNotPositiveError,
+    PaymentError,
+    PaymentNotFoundError,
+)
 from .payments_errors import (
     PaymentsBusinessLogicError,
     PaymentsConflictError,
@@ -19,6 +24,7 @@ __all__ = [
     "IdempotencyKeyConflictError",
     "InvalidAPIKeyError",
     "MissingAPIKeyError",
+    "PaymentAmountNotPositiveError",
     "PaymentError",
     "PaymentNotFoundError",
     "PaymentsBusinessLogicError",

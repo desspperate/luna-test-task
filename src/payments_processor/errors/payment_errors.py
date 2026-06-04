@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from .payments_errors import PaymentsConflictError, PaymentsNotFoundError
+from .payments_errors import PaymentsConflictError, PaymentsNotFoundError, PaymentsValidationError
 
 
 class PaymentError(Exception):
@@ -25,4 +25,12 @@ class IdempotencyKeyConflictError(PaymentError, PaymentsConflictError):
         super().__init__(
             code="IDEMPOTENCY_KEY_CONFLICT",
             message="Idempotency key was reused with a different request payload",
+        )
+
+
+class PaymentAmountNotPositiveError(PaymentError, PaymentsValidationError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="PAYMENT_AMOUNT_NOT_POSITIVE",
+            message="Payment amount must be positive",
         )
