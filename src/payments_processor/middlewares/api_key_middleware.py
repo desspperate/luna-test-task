@@ -13,15 +13,15 @@ CallNext = Callable[[Request], Awaitable[Response]]
 
 def register_api_key_middleware(app: FastAPI, api_key: SecretStr) -> None:
     @app.middleware("http")
-    async def _api_key_middleware(request: Request, call_next: CallNext) -> Response:
+    async def _api_key_middleware(request: Request, call_next: CallNext) -> Response:  # pyright: ignore[reportUnusedFunction]
         path = request.url.path
         if path in PaymentsConstants.PUBLIC_PROBE_PATHS or path in PaymentsConstants.DOCS_PATHS:
             return await call_next(request)
 
         provided = request.headers.get(PaymentsConstants.API_KEY_HEADER)
         if provided is None:
-            raise MissingAPIKeyError()
+            raise MissingAPIKeyError
         if not verify_api_key(provided=SecretStr(provided), expected=api_key):
-            raise InvalidAPIKeyError()
+            raise InvalidAPIKeyError
 
         return await call_next(request)

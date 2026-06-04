@@ -17,10 +17,10 @@ class WebhookProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def get_webhook_service(
-            self,
-            http_client: httpx.AsyncClient,
-            webhook_config: WebhookConfig,
-            ssrf_guard: SSRFGuard,
+        self,
+        http_client: httpx.AsyncClient,
+        webhook_config: WebhookConfig,
+        ssrf_guard: SSRFGuard,
     ) -> WebhookService:
         return WebhookService(
             http_client=http_client,

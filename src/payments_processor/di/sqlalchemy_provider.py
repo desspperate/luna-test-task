@@ -30,8 +30,8 @@ class SqlalchemyProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     async def get_database_session(
-            self,
-            database_session_maker: async_sessionmaker[AsyncSession],
+        self,
+        database_session_maker: async_sessionmaker[AsyncSession],
     ) -> AsyncIterable[AsyncSession]:
         async with database_session_maker() as session:
             try:

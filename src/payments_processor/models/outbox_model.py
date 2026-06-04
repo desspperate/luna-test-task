@@ -3,7 +3,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from payments_processor.constants import PaymentsConstants
@@ -13,7 +14,7 @@ from payments_processor.utils import uuid7
 
 
 class Outbox(Base):
-    __tablename__ = "outbox"
+    __tablename__ = "outbox"  # pyright: ignore[reportAssignmentType]
 
     IX_OUTBOX_PENDING = "ix_outbox_pending"
 

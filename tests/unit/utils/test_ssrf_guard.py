@@ -18,11 +18,14 @@ def _addrinfo_v6(ip: str) -> list[tuple[Any, ...]]:
 
 
 @pytest.fixture
-def stub_dns(monkeypatch: pytest.MonkeyPatch):
+def stub_dns(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[tuple[Any, ...]] | Exception], None]:
     """Stub asyncio's getaddrinfo so SSRFGuard sees a controlled resolution."""
 
     def install(result: list[tuple[Any, ...]] | Exception) -> None:
-        async def fake_getaddrinfo(*_args: Any, **_kwargs: Any) -> Any:
+        async def fake_getaddrinfo(
+            *_args: object,
+            **_kwargs: object,
+        ) -> list[tuple[Any, ...]]:
             if isinstance(result, Exception):
                 raise result
             return result
@@ -76,12 +79,15 @@ class TestAddressBlocklist:
             ("192.168.1.1", "private (RFC1918)"),
             ("172.16.0.1", "private (RFC1918)"),
             ("169.254.169.254", "link-local (AWS metadata)"),
-            ("0.0.0.0", "unspecified"),
+            ("0.0.0.0", "unspecified"),  # noqa: S104
             ("255.255.255.255", "reserved broadcast"),
         ],
     )
     async def test_blocks_resolved_address(
-        self, stub_dns, ip: str, category: str,
+        self,
+        stub_dns: Callable[..., None],
+        ip: str,
+        category: str,
     ) -> None:
         _ = category  # documents intent in pytest output
         stub_dns(_addrinfo_v4(ip))
@@ -93,12 +99,12 @@ class TestAddressBlocklist:
         assert exc_info.value.resolved_ip == ip
 
     @pytest.mark.parametrize("ip", ["1.1.1.1", "8.8.8.8", "93.184.216.34"])
-    async def test_allows_public_addresses(self, stub_dns, ip: str) -> None:
+    async def test_allows_public_addresses(self, stub_dns: Callable[..., None], ip: str) -> None:
         stub_dns(_addrinfo_v4(ip))
         guard = SSRFGuard(allow_private_hosts=False)
         await guard.validate_url("https://public.example.com/")
 
-    async def test_blocks_ipv6_loopback(self, stub_dns) -> None:
+    async def test_blocks_ipv6_loopback(self, stub_dns: Callable[..., None]) -> None:
         stub_dns(_addrinfo_v6("::1"))
         guard = SSRFGuard(allow_private_hosts=False)
         with pytest.raises(WebhookUrlNotAllowedError) as exc_info:
@@ -106,7 +112,8 @@ class TestAddressBlocklist:
         assert exc_info.value.reason == "address_disallowed"
 
     async def test_unwraps_ipv4_mapped_ipv6_before_classification(
-        self, stub_dns,
+        self,
+        stub_dns: Callable[..., None],
     ) -> None:
         """`::ffff:127.0.0.1` must be treated as 127.0.0.1, not as a public v6."""
         stub_dns(_addrinfo_v6("::ffff:127.0.0.1"))
@@ -116,7 +123,7 @@ class TestAddressBlocklist:
         assert exc_info.value.reason == "address_disallowed"
         assert exc_info.value.resolved_ip == "127.0.0.1"
 
-    async def test_strips_ipv6_zone_id_before_classification(self, stub_dns) -> None:
+    async def test_strips_ipv6_zone_id_before_classification(self, stub_dns: Callable[..., None]) -> None:
         """A zone suffix (`%en0`) must not bypass the link-local check."""
         stub_dns(_addrinfo_v6("fe80::1%en0"))
         guard = SSRFGuard(allow_private_hosts=False)

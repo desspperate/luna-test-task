@@ -66,8 +66,7 @@ async def declare_topology(broker: RabbitBroker) -> None:
     for attempt, ttl_ms in enumerate(PaymentsConstants.RETRY_TTL_MS_BY_ATTEMPT, start=1):
         await broker.declare_queue(_make_retry_queue(attempt=attempt, ttl_ms=ttl_ms))
         logger.info(
-            f"Declared retry queue '{PaymentsConstants.QUEUE_PAYMENTS_RETRY_PREFIX}{attempt}' "
-            f"(ttl={ttl_ms} ms)",
+            f"Declared retry queue '{PaymentsConstants.QUEUE_PAYMENTS_RETRY_PREFIX}{attempt}' (ttl={ttl_ms} ms)",
         )
 
     dlq = await broker.declare_queue(_make_dlq())

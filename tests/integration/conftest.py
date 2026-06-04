@@ -1,19 +1,27 @@
-import asyncio
 import os
 import socket
 import subprocess
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 from typing import Any
 
 import httpx2
 import pytest
 import pytest_asyncio
 from aiohttp import web
+from dishka.integrations import fastapi as fastapi_integration
+from fastapi import FastAPI
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 from testcontainers.rabbitmq import RabbitMqContainer
+
+from payments_processor.configs import AppConfig
+from payments_processor.di import make_payments_container
+from payments_processor.error_handlers import register_error_handler
+from payments_processor.middlewares import register_api_key_middleware
+from payments_processor.routers import api_health_router, payment_router
+from payments_processor.utils.ssrf_guard import SSRFGuard
 
 
 def _free_port() -> int:
@@ -28,7 +36,7 @@ def pg_container() -> Iterator[PostgresContainer]:
     container = PostgresContainer(
         "postgres:18-alpine",
         username="test_user",
-        password="test_password",
+        password="test_password",  # noqa: S106
         dbname="test_db",
     )
     try:
@@ -47,7 +55,7 @@ def rmq_container() -> Iterator[RabbitMqContainer]:
     container = RabbitMqContainer(
         "rabbitmq:4.3-management-alpine",
         username="test_user",
-        password="test_password",
+        password="test_password",  # noqa: S106
     )
     try:
         container.start()
@@ -60,7 +68,10 @@ def rmq_container() -> Iterator[RabbitMqContainer]:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _configure_env(pg_container: PostgresContainer, rmq_container: RabbitMqContainer) -> Iterator[None]:
+def _configure_env(  # pyright: ignore[reportUnusedFunction]
+    pg_container: PostgresContainer,
+    rmq_container: RabbitMqContainer,
+) -> Iterator[None]:
     """Configure env vars to point at the test containers and run migrations once."""
     overrides = {
         "PG_HOST": pg_container.get_container_host_ip(),
@@ -88,9 +99,9 @@ def _configure_env(pg_container: PostgresContainer, rmq_container: RabbitMqConta
     saved = {k: os.environ.get(k) for k in overrides}
     os.environ.update(overrides)
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_root = Path(__file__).resolve().parent.parent.parent
     subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
+        ["uv", "run", "alembic", "upgrade", "head"],  # noqa: S607
         cwd=repo_root,
         check=True,
         env=os.environ.copy(),
@@ -107,19 +118,17 @@ def _configure_env(pg_container: PostgresContainer, rmq_container: RabbitMqConta
 
 
 @pytest.fixture(autouse=True)
-def _relax_ssrf_schemes() -> Iterator[None]:
+def _relax_ssrf_schemes() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     """Allow http:// webhook URLs for integration tests — the local aiohttp
     receiver on 127.0.0.1 doesn't speak TLS. Function-scoped so it doesn't
     leak into other test directories.
     """
-    from payments_processor.utils.ssrf_guard import SSRFGuard
-
-    original = SSRFGuard._ALLOWED_SCHEMES
-    SSRFGuard._ALLOWED_SCHEMES = frozenset({"https", "http"})
+    original = SSRFGuard._ALLOWED_SCHEMES  # pyright: ignore[reportPrivateUsage]
+    SSRFGuard._ALLOWED_SCHEMES = frozenset({"https", "http"})  # pyright: ignore[reportPrivateUsage]
     try:
         yield
     finally:
-        SSRFGuard._ALLOWED_SCHEMES = original
+        SSRFGuard._ALLOWED_SCHEMES = original  # pyright: ignore[reportPrivateUsage]
 
 
 def _build_dsn() -> str:
@@ -130,19 +139,19 @@ def _build_dsn() -> str:
 
 
 @pytest_asyncio.fixture
-async def engine() -> AsyncIterator[Any]:
+async def engine() -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(_build_dsn(), pool_pre_ping=True)
     yield eng
     await eng.dispose()
 
 
 @pytest_asyncio.fixture
-async def session_maker(engine: Any) -> async_sessionmaker[AsyncSession]:
+async def session_maker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def clean_db(engine: Any) -> AsyncIterator[None]:
+async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:  # pyright: ignore[reportUnusedFunction]
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE payments, outbox RESTART IDENTITY CASCADE"))
     yield
@@ -162,18 +171,24 @@ ReceivedRequest = dict[str, Any]
 
 
 class WebhookReceiver:
-    def __init__(self, port: int, requests: list[ReceivedRequest], runner: Any) -> None:
+    def __init__(
+        self,
+        port: int,
+        requests: list[ReceivedRequest],
+        runner: web.AppRunner,
+        holder: dict[str, int],
+    ) -> None:
         self.port = port
         self.requests = requests
         self.runner = runner
-        self._next_status = 200
+        self._holder = holder
 
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/wh"
 
     def set_status(self, status: int) -> None:
-        self._next_status = status
+        self._holder["status"] = status
 
 
 @pytest_asyncio.fixture
@@ -202,9 +217,7 @@ async def webhook_receiver() -> AsyncIterator[WebhookReceiver]:
     site = web.TCPSite(runner, "127.0.0.1", port)
     await site.start()
 
-    receiver = WebhookReceiver(port=port, requests=received, runner=runner)
-    receiver._holder = holder  # type: ignore[attr-defined]
-    receiver.set_status = lambda s: holder.__setitem__("status", s)  # type: ignore[assignment]
+    receiver = WebhookReceiver(port=port, requests=received, runner=runner, holder=holder)
 
     try:
         yield receiver
@@ -212,23 +225,10 @@ async def webhook_receiver() -> AsyncIterator[WebhookReceiver]:
         await runner.cleanup()
 
 
-# ---------------------------------------------------------------------------
-# Application (HTTP)
-# ---------------------------------------------------------------------------
-
-
 @pytest_asyncio.fixture
-async def api_app() -> AsyncIterator[Any]:
+async def api_app() -> AsyncIterator[FastAPI]:
     # Re-import per fixture call to pick up env vars; but the container is APP-scoped,
     # so re-creating it gives clean state.
-    from payments_processor.configs import AppConfig
-    from payments_processor.di import make_payments_container
-    from payments_processor.error_handlers import register_error_handler
-    from payments_processor.middlewares import register_api_key_middleware
-    from payments_processor.routers import api_health_router, payment_router
-    from dishka.integrations import fastapi as fastapi_integration
-    from fastapi import FastAPI
-
     app_config = AppConfig()  # type: ignore[call-arg]
     container = make_payments_container(app_config_instance=app_config)
     application = FastAPI(title="test")
@@ -247,9 +247,10 @@ async def api_app() -> AsyncIterator[Any]:
 
 
 @pytest_asyncio.fixture
-async def api_client(api_app: Any) -> AsyncIterator[httpx2.AsyncClient]:
+async def api_client(api_app: FastAPI) -> AsyncIterator[httpx2.AsyncClient]:
     transport = httpx2.ASGITransport(app=api_app, raise_app_exceptions=False)
-    headers = {"X-API-Key": api_app.state.api_key_value}
+    api_key_value: str = api_app.state.api_key_value
+    headers = {"X-API-Key": api_key_value}
     async with httpx2.AsyncClient(
         transport=transport,
         base_url="http://testserver",
@@ -264,5 +265,6 @@ async def api_client(api_app: Any) -> AsyncIterator[httpx2.AsyncClient]:
 
 
 @pytest.fixture
-def auth_headers(api_app: Any) -> dict[str, str]:
-    return {"X-API-Key": api_app.state.api_key_value}
+def auth_headers(api_app: FastAPI) -> dict[str, str]:
+    api_key_value: str = api_app.state.api_key_value
+    return {"X-API-Key": api_key_value}

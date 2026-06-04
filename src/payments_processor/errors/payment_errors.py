@@ -18,8 +18,8 @@ class PaymentNotFoundError(PaymentError, PaymentsNotFoundError):
 
 class IdempotencyKeyConflictError(PaymentError, PaymentsConflictError):
     def __init__(
-            self,
-            idempotency_key: str,
+        self,
+        idempotency_key: str,
     ) -> None:
         self.idempotency_key = idempotency_key
         super().__init__(

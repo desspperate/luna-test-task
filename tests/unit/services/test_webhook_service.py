@@ -19,9 +19,9 @@ from payments_processor.enums import CurrencyEnum, PaymentStatusEnum
 from payments_processor.errors import WebhookSendError, WebhookUrlNotAllowedError
 from payments_processor.services import WebhookService
 from payments_processor.utils import SSRFGuard
+from tests.unit.conftest import MakePaymentFactory
 
-
-SECRET_VALUE = "a-very-secret-value-32-chars-long!"
+SECRET_VALUE = "a-very-secret-value-32-chars-long!"  # noqa: S105
 
 
 def _config(timeout: float = 5.0) -> WebhookConfig:
@@ -49,7 +49,11 @@ def service(http_client: httpx.AsyncClient) -> WebhookService:
 
 class TestSendSuccess:
     @respx.mock
-    async def test_sends_post_to_webhook_url(self, service, make_payment) -> None:
+    async def test_sends_post_to_webhook_url(
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+    ) -> None:
         payment = make_payment(webhook_url="https://example.com/wh")
         route = respx.post("https://example.com/wh").mock(
             return_value=httpx.Response(200),
@@ -61,7 +65,9 @@ class TestSendSuccess:
 
     @respx.mock
     async def test_body_contains_full_payment_payload(
-        self, service, make_payment,
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
     ) -> None:
         payment = make_payment(
             amount=Decimal("123.45"),
@@ -84,7 +90,11 @@ class TestSendSuccess:
         UUID(body["event_id"])  # parses as a real UUID
 
     @respx.mock
-    async def test_event_id_is_uuid_v7(self, service, make_payment) -> None:
+    async def test_event_id_is_uuid_v7(
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+    ) -> None:
         payment = make_payment()
         route = respx.post(payment.webhook_url).mock(return_value=httpx.Response(200))
 
@@ -94,7 +104,9 @@ class TestSendSuccess:
 
     @respx.mock
     async def test_signature_is_hmac_sha256_of_ts_and_body(
-        self, service, make_payment,
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
     ) -> None:
         payment = make_payment()
         route = respx.post(payment.webhook_url).mock(return_value=httpx.Response(200))
@@ -115,7 +127,9 @@ class TestSendSuccess:
 
     @respx.mock
     async def test_timestamp_header_is_current_unix_seconds(
-        self, service, make_payment,
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
     ) -> None:
         with freeze_time("2026-06-01T00:00:00Z"):
             payment = make_payment()
@@ -129,7 +143,11 @@ class TestSendSuccess:
         assert int(ts) == expected
 
     @respx.mock
-    async def test_event_metadata_headers_set(self, service, make_payment) -> None:
+    async def test_event_metadata_headers_set(
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+    ) -> None:
         payment = make_payment()
         route = respx.post(payment.webhook_url).mock(return_value=httpx.Response(200))
         await service.send(payment=payment)
@@ -137,12 +155,17 @@ class TestSendSuccess:
         req = route.calls.last.request
         assert req.headers["Content-Type"] == "application/json"
         assert req.headers["User-Agent"] == PaymentsConstants.WEBHOOK_USER_AGENT
-        assert req.headers[PaymentsConstants.WEBHOOK_EVENT_TYPE_HEADER] == \
-            PaymentsConstants.PAYMENT_PROCESSED_EVENT_TYPE
+        assert (
+            req.headers[PaymentsConstants.WEBHOOK_EVENT_TYPE_HEADER] == PaymentsConstants.PAYMENT_PROCESSED_EVENT_TYPE
+        )
         assert UUID(req.headers[PaymentsConstants.WEBHOOK_ID_HEADER]).version == 7
 
     @respx.mock
-    async def test_uses_configured_timeout(self, http_client, make_payment) -> None:
+    async def test_uses_configured_timeout(
+        self,
+        http_client: httpx.AsyncClient,
+        make_payment: MakePaymentFactory,
+    ) -> None:
         service = WebhookService(
             http_client=http_client,
             webhook_config=_config(timeout=2.0),
@@ -166,7 +189,11 @@ class TestSendFailures:
         [(400, "client error"), (404, "client error"), (500, "server error"), (503, "server error")],
     )
     async def test_non_2xx_raises_with_status_code(
-        self, service, make_payment, status_code: int, marker: str,
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+        status_code: int,
+        marker: str,
     ) -> None:
         _ = marker
         payment = make_payment()
@@ -188,7 +215,11 @@ class TestSendFailures:
         ],
     )
     async def test_transport_errors_surface_as_send_error(
-        self, service, make_payment, exception: Exception, expected_reason: str,
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+        exception: Exception,
+        expected_reason: str,
     ) -> None:
         payment = make_payment()
         respx.post(payment.webhook_url).mock(side_effect=exception)
@@ -199,7 +230,11 @@ class TestSendFailures:
         assert exc_info.value.status_code is None
 
     @respx.mock
-    async def test_2xx_other_than_200_is_accepted(self, service, make_payment) -> None:
+    async def test_2xx_other_than_200_is_accepted(
+        self,
+        service: WebhookService,
+        make_payment: MakePaymentFactory,
+    ) -> None:
         payment = make_payment()
         respx.post(payment.webhook_url).mock(return_value=httpx.Response(204))
 
@@ -209,9 +244,14 @@ class TestSendFailures:
 class TestSSRFGuardOrdering:
     @respx.mock
     async def test_guard_runs_before_http_call(
-        self, http_client, make_payment,
+        self,
+        http_client: httpx.AsyncClient,
+        make_payment: MakePaymentFactory,
     ) -> None:
-        class BlockingGuard:
+        class BlockingGuard(SSRFGuard):
+            def __init__(self) -> None:
+                super().__init__(allow_private_hosts=False)
+
             async def validate_url(self, url: str) -> None:
                 raise WebhookUrlNotAllowedError(url=url, reason="address_disallowed")
 
@@ -230,11 +270,16 @@ class TestSSRFGuardOrdering:
 
     @respx.mock
     async def test_guard_receives_actual_webhook_url(
-        self, http_client, make_payment,
+        self,
+        http_client: httpx.AsyncClient,
+        make_payment: MakePaymentFactory,
     ) -> None:
         captured: list[str] = []
 
-        class RecordingGuard:
+        class RecordingGuard(SSRFGuard):
+            def __init__(self) -> None:
+                super().__init__(allow_private_hosts=False)
+
             async def validate_url(self, url: str) -> None:
                 captured.append(url)
 

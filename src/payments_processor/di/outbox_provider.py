@@ -17,9 +17,9 @@ class OutboxProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def get_outbox_service(
-            self,
-            outbox_repository: OutboxRepository,
-            outbox_dispatcher_config: OutboxDispatcherConfig,
+        self,
+        outbox_repository: OutboxRepository,
+        outbox_dispatcher_config: OutboxDispatcherConfig,
     ) -> OutboxService:
         return OutboxService(
             outbox_repository=outbox_repository,

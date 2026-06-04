@@ -2,7 +2,7 @@ from collections.abc import AsyncIterable
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from dishka import Provider, Scope, make_async_container, provide
+from dishka import Provider, Scope, make_async_container, provide  # pyright: ignore[reportUnknownVariableType]
 from dishka.integrations import fastapi as fastapi_integration
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

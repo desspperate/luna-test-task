@@ -6,16 +6,18 @@ from pydantic import SecretStr
 
 from payments_processor.utils import sign_webhook, verify_api_key
 
-
 EXPECTED_KEY = SecretStr("supersecret-correct-key-value-32")
 
 
 class TestVerifyApiKey:
     def test_accepts_matching_key(self) -> None:
-        assert verify_api_key(
-            provided=SecretStr("supersecret-correct-key-value-32"),
-            expected=EXPECTED_KEY,
-        ) is True
+        assert (
+            verify_api_key(
+                provided=SecretStr("supersecret-correct-key-value-32"),
+                expected=EXPECTED_KEY,
+            )
+            is True
+        )
 
     @pytest.mark.parametrize(
         ("provided", "reason"),
@@ -29,7 +31,9 @@ class TestVerifyApiKey:
         ],
     )
     def test_rejects_non_matching_input(
-        self, provided: SecretStr | None, reason: str,
+        self,
+        provided: SecretStr | None,
+        reason: str,
     ) -> None:
         _ = reason  # documents the case
         assert verify_api_key(provided=provided, expected=EXPECTED_KEY) is False
@@ -77,7 +81,9 @@ class TestSignWebhook:
         ],
     )
     def test_different_inputs_produce_different_signatures(
-        self, a: tuple, b: tuple,
+        self,
+        a: tuple[bytes, SecretStr, int],
+        b: tuple[bytes, SecretStr, int],
     ) -> None:
         sig_a = sign_webhook(body=a[0], secret=a[1], ts=a[2])
         sig_b = sign_webhook(body=b[0], secret=b[1], ts=b[2])
@@ -86,6 +92,8 @@ class TestSignWebhook:
     def test_handles_empty_body(self) -> None:
         sig = sign_webhook(body=b"", secret=SecretStr("k"), ts=1)
         expected = hmac.new(
-            key=b"k", msg=b"1.", digestmod=hashlib.sha256,
+            key=b"k",
+            msg=b"1.",
+            digestmod=hashlib.sha256,
         ).hexdigest()
         assert sig == expected

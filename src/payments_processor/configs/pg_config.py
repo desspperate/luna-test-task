@@ -12,8 +12,10 @@ class PGConfig(BaseSettings):
 
     @property
     def dsn(self) -> str:
-        return (f"{self.PG_DRIVER}://{self.PG_USER}:{self.PG_PASSWORD.get_secret_value()}@{self.PG_HOST}:{self.PG_PORT}"
-                f"/{self.PG_DB}")
+        return (
+            f"{self.PG_DRIVER}://{self.PG_USER}:{self.PG_PASSWORD.get_secret_value()}@{self.PG_HOST}:{self.PG_PORT}"
+            f"/{self.PG_DB}"
+        )
 
     model_config = SettingsConfigDict(
         env_file=".env",

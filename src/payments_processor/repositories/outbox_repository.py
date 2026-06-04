@@ -16,12 +16,12 @@ class OutboxRepository(BaseRepository[Outbox]):
         super().__init__(session=session, model=Outbox)
 
     async def enqueue(
-            self,
-            aggregate_type: str,
-            aggregate_id: UUID,
-            event_type: str,
-            routing_key: str,
-            payload: dict[str, Any],
+        self,
+        aggregate_type: str,
+        aggregate_id: UUID,
+        event_type: str,
+        routing_key: str,
+        payload: dict[str, Any],
     ) -> Outbox:
         statement = (
             insert(Outbox)
@@ -64,10 +64,10 @@ class OutboxRepository(BaseRepository[Outbox]):
         await self.session.execute(statement)
 
     async def bump_attempt(
-            self,
-            outbox_id: UUID,
-            error: str,
-            next_attempt_at: datetime,
+        self,
+        outbox_id: UUID,
+        error: str,
+        next_attempt_at: datetime,
     ) -> None:
         statement = (
             update(Outbox)

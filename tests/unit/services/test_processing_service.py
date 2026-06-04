@@ -8,7 +8,7 @@ from payments_processor.enums import ProcessingOutcomeEnum
 from payments_processor.services import ProcessingService
 
 
-def _config(**overrides: Any) -> ConsumerConfig:
+def _config(**overrides: Any) -> ConsumerConfig:  # noqa: ANN401
     defaults: dict[str, Any] = {
         "CONSUMER_PREFETCH_COUNT": 10,
         "CONSUMER_MAX_RETRIES": 3,
@@ -39,7 +39,7 @@ class ScriptedRng:
 
 
 @pytest.fixture(autouse=True)
-def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:  # pyright: ignore[reportUnusedFunction]
     """Replace asyncio.sleep with a no-op that records the requested delay so
     tests can assert on it without waiting."""
     recorded: list[float] = []
@@ -48,7 +48,8 @@ def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
         recorded.append(delay)
 
     monkeypatch.setattr(
-        "payments_processor.services.processing_service.asyncio.sleep", fake_sleep,
+        "payments_processor.services.processing_service.asyncio.sleep",
+        fake_sleep,
     )
     return recorded
 
@@ -68,7 +69,8 @@ def _build_service(
 
 class TestOutcome:
     async def test_random_below_threshold_yields_success(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         service, _ = _build_service(
             monkeypatch,
@@ -78,7 +80,8 @@ class TestOutcome:
         assert await service.process(payment_id=uuid4()) == ProcessingOutcomeEnum.SUCCEEDED
 
     async def test_random_at_threshold_yields_failure(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`< 0.9` predicate means random == 0.9 is failure, not success."""
         service, _ = _build_service(
@@ -89,7 +92,8 @@ class TestOutcome:
         assert await service.process(payment_id=uuid4()) == ProcessingOutcomeEnum.FAILED
 
     async def test_probability_zero_always_fails(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         service, _ = _build_service(
             monkeypatch,
@@ -99,7 +103,8 @@ class TestOutcome:
         assert await service.process(payment_id=uuid4()) == ProcessingOutcomeEnum.FAILED
 
     async def test_probability_one_always_succeeds(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         service, _ = _build_service(
             monkeypatch,
@@ -111,7 +116,8 @@ class TestOutcome:
 
 class TestProcessingDelay:
     async def test_uses_configured_min_max_for_uniform_sample(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cfg = _config(
             CONSUMER_PROCESS_MIN_SECONDS=1.5,
@@ -124,7 +130,9 @@ class TestProcessingDelay:
         assert rng.uniform_calls == [(1.5, 4.5)]
 
     async def test_sleeps_for_sampled_delay(
-        self, monkeypatch: pytest.MonkeyPatch, _no_real_sleep: list[float],
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        _no_real_sleep: list[float],  # noqa: PT019
     ) -> None:
         service, _ = _build_service(
             monkeypatch,
@@ -134,7 +142,8 @@ class TestProcessingDelay:
         assert _no_real_sleep == [2.5]
 
     async def test_calls_random_exactly_once(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         service, rng = _build_service(monkeypatch)
         await service.process(payment_id=uuid4())

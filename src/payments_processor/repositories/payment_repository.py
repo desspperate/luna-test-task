@@ -15,14 +15,14 @@ class PaymentRepository(BaseRepository[Payment]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session=session, model=Payment)
 
-    async def create_payment(
-            self,
-            amount: Decimal,
-            currency: CurrencyEnum,
-            description: str | None,
-            meta: dict[str, Any] | None,
-            idempotency_key: str,
-            webhook_url: str,
+    async def create_payment(  # noqa: PLR0913
+        self,
+        amount: Decimal,
+        currency: CurrencyEnum,
+        description: str | None,
+        meta: dict[str, Any] | None,
+        idempotency_key: str,
+        webhook_url: str,
     ) -> Payment:
         statement = (
             insert(Payment)
@@ -40,18 +40,15 @@ class PaymentRepository(BaseRepository[Payment]):
         return result.scalar_one()
 
     async def get_by_idempotency_key(self, idempotency_key: str) -> Payment | None:
-        statement = (
-            select(Payment)
-            .where(Payment.idempotency_key == idempotency_key)
-        )
+        statement = select(Payment).where(Payment.idempotency_key == idempotency_key)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def update_processing_outcome(
-            self,
-            payment_id: UUID,
-            status: PaymentStatusEnum,
-            processed_at: datetime,
+        self,
+        payment_id: UUID,
+        status: PaymentStatusEnum,
+        processed_at: datetime,
     ) -> Payment | None:
         statement = (
             update(Payment)

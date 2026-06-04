@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from dishka import AsyncContainer
@@ -19,9 +19,9 @@ from payments_processor.utils import HealthState, print_pd_settings
 
 
 async def _process_batch(
-        request_container: AsyncContainer,
-        publisher: PaymentEventPublisher,
-        batch_size: int,
+    request_container: AsyncContainer,
+    publisher: PaymentEventPublisher,
+    batch_size: int,
 ) -> int:
     session = await request_container.get(AsyncSession)
     outbox_service = await request_container.get(OutboxService)
@@ -44,10 +44,10 @@ async def _process_batch(
 
 
 async def _run_loop(
-        container: AsyncContainer,
-        publisher: PaymentEventPublisher,
-        dispatcher_config: OutboxDispatcherConfig,
-        health_state: HealthState,
+    container: AsyncContainer,
+    publisher: PaymentEventPublisher,
+    dispatcher_config: OutboxDispatcherConfig,
+    health_state: HealthState,
 ) -> None:
     logger.info("Outbox dispatcher loop started")
 
@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     )
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         logger.info("Outbox dispatcher starting up...")
 
         print_pd_settings(app_config)

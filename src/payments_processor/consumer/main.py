@@ -1,5 +1,5 @@
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from dishka import AsyncContainer
@@ -28,11 +28,11 @@ from payments_processor.utils import HealthState, print_pd_settings
 
 
 async def _retry_or_dlq(
-        publisher: PaymentEventPublisher,
-        msg: RabbitMessage,
-        event: PaymentCreatedEvent,
-        error: WebhookSendError,
-        max_retries: int,
+    publisher: PaymentEventPublisher,
+    msg: RabbitMessage,
+    event: PaymentCreatedEvent,
+    error: WebhookSendError,
+    max_retries: int,
 ) -> None:
     current_count = get_retry_count(headers=msg.headers)
     next_count = current_count + 1
@@ -63,11 +63,11 @@ async def _retry_or_dlq(
 
 
 async def _handle_payment_created(
-        event: PaymentCreatedEvent,
-        msg: RabbitMessage,
-        container: AsyncContainer,
-        publisher: PaymentEventPublisher,
-        max_retries: int,
+    event: PaymentCreatedEvent,
+    msg: RabbitMessage,
+    container: AsyncContainer,
+    publisher: PaymentEventPublisher,
+    max_retries: int,
 ) -> None:
     with logger.contextualize(payment_id=str(event.payment_id)):
         try:
@@ -113,10 +113,10 @@ async def _handle_payment_created(
 
 
 def _register_consumer(
-        broker: RabbitBroker,
-        container: AsyncContainer,
-        consumer_config: ConsumerConfig,
-        publisher: PaymentEventPublisher,
+    broker: RabbitBroker,
+    container: AsyncContainer,
+    consumer_config: ConsumerConfig,
+    publisher: PaymentEventPublisher,
 ) -> None:
     queue = RabbitQueue(
         name=PaymentsConstants.QUEUE_PAYMENTS_NEW,
@@ -162,7 +162,7 @@ def create_app() -> FastAPI:
     health_state = HealthState()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         logger.info("Consumer starting up...")
 
         print_pd_settings(app_config)

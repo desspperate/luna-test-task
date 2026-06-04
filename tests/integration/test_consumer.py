@@ -2,26 +2,29 @@ import hashlib
 import hmac
 import json
 import os
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import httpx2
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from payments_processor.constants import PaymentsConstants
+from payments_processor.consumer.main import (
+    _handle_payment_created,  # pyright: ignore[reportPrivateUsage]
+)
 from payments_processor.enums import PaymentStatusEnum
+from payments_processor.messaging import PaymentEventPublisher
 from payments_processor.models import Payment
 from payments_processor.schemas import PaymentCreatedEvent
 
 from ._helpers import create_payment
+from .conftest import WebhookReceiver
 
 pytestmark = pytest.mark.integration
-
-
-# ---------------------------------------------------------------------------
-# Test doubles
-# ---------------------------------------------------------------------------
 
 
 class FakeMessage:
@@ -37,33 +40,30 @@ class FakeMessage:
     async def ack(self) -> None:
         self.acked = True
 
-    async def reject(self, requeue: bool = True) -> None:
+    async def reject(self, *, requeue: bool = True) -> None:
         self.rejected_requeue = requeue
 
-    async def nack(self, requeue: bool = True) -> None:
+    async def nack(self, *, requeue: bool = True) -> None:
         self.nacked_requeue = requeue
 
 
 def _make_publisher() -> AsyncMock:
-    from payments_processor.messaging import PaymentEventPublisher
-
     return AsyncMock(spec=PaymentEventPublisher)
 
 
 async def _run_handler(
     *,
-    api_app,
+    api_app: FastAPI,
     payment_id: UUID,
     publisher: AsyncMock,
     msg: FakeMessage,
     max_retries: int = 3,
 ) -> None:
-    from payments_processor.consumer.main import _handle_payment_created
-
+    container = api_app.state.container
     await _handle_payment_created(
         event=PaymentCreatedEvent(payment_id=payment_id),
-        msg=msg,
-        container=api_app.state.container,
+        msg=cast("Any", msg),
+        container=container,
         publisher=publisher,
         max_retries=max_retries,
     )
@@ -76,24 +76,38 @@ async def _run_handler(
 
 class TestHappyPath:
     async def test_acks_message(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-1", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-1",
+            webhook_url=webhook_receiver.url,
         )
         publisher = _make_publisher()
         msg = FakeMessage()
 
         await _run_handler(
-            api_app=api_app, payment_id=payment_id, publisher=publisher, msg=msg,
+            api_app=api_app,
+            payment_id=payment_id,
+            publisher=publisher,
+            msg=msg,
         )
         assert msg.acked is True
 
     async def test_updates_payment_to_processed_status(
-        self, api_app, api_client, webhook_receiver, pg_session,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
+        pg_session: AsyncSession,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-2", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-2",
+            webhook_url=webhook_receiver.url,
         )
         await _run_handler(
             api_app=api_app,
@@ -102,18 +116,21 @@ class TestHappyPath:
             msg=FakeMessage(),
         )
 
-        payment = (
-            await pg_session.execute(select(Payment).where(Payment.id == payment_id))
-        ).scalar_one()
+        payment = (await pg_session.execute(select(Payment).where(Payment.id == payment_id))).scalar_one()
         # CONSUMER_SUCCESS_PROBABILITY=1.0 in test env, so always SUCCEEDED
         assert payment.status == PaymentStatusEnum.SUCCEEDED
         assert payment.processed_at is not None
 
     async def test_sends_webhook_with_correct_event_type_header(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-3", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-3",
+            webhook_url=webhook_receiver.url,
         )
         await _run_handler(
             api_app=api_app,
@@ -124,14 +141,21 @@ class TestHappyPath:
 
         assert len(webhook_receiver.requests) == 1
         delivered = webhook_receiver.requests[0]
-        assert delivered["headers"][PaymentsConstants.WEBHOOK_EVENT_TYPE_HEADER] == \
-            PaymentsConstants.PAYMENT_PROCESSED_EVENT_TYPE
+        assert (
+            delivered["headers"][PaymentsConstants.WEBHOOK_EVENT_TYPE_HEADER]
+            == PaymentsConstants.PAYMENT_PROCESSED_EVENT_TYPE
+        )
 
     async def test_webhook_body_contains_payment_id_and_final_status(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-4", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-4",
+            webhook_url=webhook_receiver.url,
         )
         await _run_handler(
             api_app=api_app,
@@ -145,10 +169,15 @@ class TestHappyPath:
         assert body["status"] == "SUCCEEDED"
 
     async def test_webhook_signature_validates_with_configured_secret(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-5", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-5",
+            webhook_url=webhook_receiver.url,
         )
         await _run_handler(
             api_app=api_app,
@@ -169,14 +198,22 @@ class TestHappyPath:
         assert sig.removeprefix("sha256=") == expected
 
     async def test_does_not_publish_to_retry_or_dlq_on_success(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="happy-6", webhook_url=webhook_receiver.url,
+            api_client,
+            key="happy-6",
+            webhook_url=webhook_receiver.url,
         )
         publisher = _make_publisher()
         await _run_handler(
-            api_app=api_app, payment_id=payment_id, publisher=publisher, msg=FakeMessage(),
+            api_app=api_app,
+            payment_id=payment_id,
+            publisher=publisher,
+            msg=FakeMessage(),
         )
         publisher.publish_to_queue.assert_not_awaited()
         publisher.publish_to_dlx.assert_not_awaited()
@@ -192,10 +229,16 @@ class TestConsumerIdempotency:
     re-attempt the webhook (so a failed delivery can recover)."""
 
     async def test_processed_at_unchanged_on_second_delivery(
-        self, api_app, api_client, webhook_receiver, pg_session,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
+        pg_session: AsyncSession,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="idempo-1", webhook_url=webhook_receiver.url,
+            api_client,
+            key="idempo-1",
+            webhook_url=webhook_receiver.url,
         )
         await _run_handler(
             api_app=api_app,
@@ -203,9 +246,7 @@ class TestConsumerIdempotency:
             publisher=_make_publisher(),
             msg=FakeMessage(),
         )
-        first = (
-            await pg_session.execute(select(Payment).where(Payment.id == payment_id))
-        ).scalar_one()
+        first = (await pg_session.execute(select(Payment).where(Payment.id == payment_id))).scalar_one()
 
         await _run_handler(
             api_app=api_app,
@@ -214,18 +255,21 @@ class TestConsumerIdempotency:
             msg=FakeMessage(),
         )
         pg_session.expire_all()
-        second = (
-            await pg_session.execute(select(Payment).where(Payment.id == payment_id))
-        ).scalar_one()
+        second = (await pg_session.execute(select(Payment).where(Payment.id == payment_id))).scalar_one()
 
         assert second.processed_at == first.processed_at
         assert second.status == first.status
 
     async def test_webhook_resent_on_each_delivery(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         payment_id = await create_payment(
-            api_client, key="idempo-2", webhook_url=webhook_receiver.url,
+            api_client,
+            key="idempo-2",
+            webhook_url=webhook_receiver.url,
         )
         for _ in range(2):
             await _run_handler(
@@ -244,17 +288,25 @@ class TestConsumerIdempotency:
 
 class TestRetryAndDLQ:
     async def test_first_failure_schedules_first_retry(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         webhook_receiver.set_status(500)
         payment_id = await create_payment(
-            api_client, key="retry-1", webhook_url=webhook_receiver.url,
+            api_client,
+            key="retry-1",
+            webhook_url=webhook_receiver.url,
         )
         publisher = _make_publisher()
         msg = FakeMessage()  # no retry count yet
 
         await _run_handler(
-            api_app=api_app, payment_id=payment_id, publisher=publisher, msg=msg,
+            api_app=api_app,
+            payment_id=payment_id,
+            publisher=publisher,
+            msg=msg,
         )
 
         publisher.publish_to_queue.assert_awaited_once()
@@ -267,28 +319,41 @@ class TestRetryAndDLQ:
         publisher.publish_to_dlx.assert_not_awaited()
 
     async def test_subsequent_failure_uses_next_retry_queue(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         webhook_receiver.set_status(500)
         payment_id = await create_payment(
-            api_client, key="retry-2", webhook_url=webhook_receiver.url,
+            api_client,
+            key="retry-2",
+            webhook_url=webhook_receiver.url,
         )
         publisher = _make_publisher()
         msg = FakeMessage(headers={PaymentsConstants.RETRY_COUNT_HEADER: 1})
 
         await _run_handler(
-            api_app=api_app, payment_id=payment_id, publisher=publisher, msg=msg,
+            api_app=api_app,
+            payment_id=payment_id,
+            publisher=publisher,
+            msg=msg,
         )
         kwargs = publisher.publish_to_queue.await_args.kwargs
         assert kwargs["queue"] == f"{PaymentsConstants.QUEUE_PAYMENTS_RETRY_PREFIX}2"
         assert kwargs["headers"][PaymentsConstants.RETRY_COUNT_HEADER] == 2
 
     async def test_exhausted_retries_route_to_dlq(
-        self, api_app, api_client, webhook_receiver,
+        self,
+        api_app: FastAPI,
+        api_client: httpx2.AsyncClient,
+        webhook_receiver: WebhookReceiver,
     ) -> None:
         webhook_receiver.set_status(500)
         payment_id = await create_payment(
-            api_client, key="dlq-1", webhook_url=webhook_receiver.url,
+            api_client,
+            key="dlq-1",
+            webhook_url=webhook_receiver.url,
         )
         publisher = _make_publisher()
         msg = FakeMessage(headers={PaymentsConstants.RETRY_COUNT_HEADER: 3})
@@ -318,7 +383,8 @@ class TestRetryAndDLQ:
 
 class TestSafetyNet:
     async def test_unknown_payment_id_rejected_without_requeue(
-        self, api_app,
+        self,
+        api_app: FastAPI,
     ) -> None:
         """A message referencing a payment that no longer exists must NOT be
         retried. It goes to the DLQ via reject(requeue=False)."""
@@ -326,7 +392,10 @@ class TestSafetyNet:
         msg = FakeMessage()
 
         await _run_handler(
-            api_app=api_app, payment_id=uuid4(), publisher=publisher, msg=msg,
+            api_app=api_app,
+            payment_id=uuid4(),
+            publisher=publisher,
+            msg=msg,
         )
 
         assert msg.acked is False

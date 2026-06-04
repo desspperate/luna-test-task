@@ -11,10 +11,10 @@ class PaymentEventPublisher:
         self.broker = broker
 
     async def publish(
-            self,
-            routing_key: str,
-            payload: dict[str, Any],
-            headers: dict[str, Any] | None = None,
+        self,
+        routing_key: str,
+        payload: dict[str, Any],
+        headers: dict[str, Any] | None = None,
     ) -> None:
         logger.debug(f"Publishing to '{PaymentsConstants.EXCHANGE_PAYMENTS}' with routing_key='{routing_key}'")
         await self.broker.publish(
@@ -27,10 +27,10 @@ class PaymentEventPublisher:
         )
 
     async def publish_to_dlx(
-            self,
-            routing_key: str,
-            payload: dict[str, Any],
-            headers: dict[str, Any] | None = None,
+        self,
+        routing_key: str,
+        payload: dict[str, Any],
+        headers: dict[str, Any] | None = None,
     ) -> None:
         logger.debug(f"Publishing to '{PaymentsConstants.EXCHANGE_PAYMENTS_DLX}' with routing_key='{routing_key}'")
         await self.broker.publish(
@@ -43,10 +43,10 @@ class PaymentEventPublisher:
         )
 
     async def publish_to_queue(
-            self,
-            queue: str,
-            payload: dict[str, Any],
-            headers: dict[str, Any] | None = None,
+        self,
+        queue: str,
+        payload: dict[str, Any],
+        headers: dict[str, Any] | None = None,
     ) -> None:
         logger.debug(f"Publishing directly to queue '{queue}'")
         await self.broker.publish(

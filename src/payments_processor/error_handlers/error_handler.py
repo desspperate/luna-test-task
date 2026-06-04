@@ -67,8 +67,7 @@ def register_error_handler(app: FastAPI) -> None:
             method=request.method,
             path=request.url.path,
             error_code=exc.code,
-        ).info(f"Business Rule Violation [{exc.code}]: {exc.message} "
-               f"| Details: {exc.details}")
+        ).info(f"Business Rule Violation [{exc.code}]: {exc.message} | Details: {exc.details}")
 
         content: dict[str, Any] = {
             "code": exc.code,

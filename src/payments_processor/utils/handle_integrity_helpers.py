@@ -28,9 +28,9 @@ class HandleIntegrityHelpers:
             except (ValueError, TypeError):
                 raise UnhandledIntegrityError from integrity_error
         if (
-                (not isinstance(column, str)) or
-                (not isinstance(failed_value, str)) or
-                (not isinstance(referrer_table, str))
+            (not isinstance(column, str))
+            or (not isinstance(failed_value, str))
+            or (not isinstance(referrer_table, str))
         ):
             logger.trace(f"condition breakdown: {type(column)}, {type(failed_value)}, {type(referrer_table)}")
             raise UnhandledIntegrityError from integrity_error

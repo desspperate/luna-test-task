@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 import pytest
@@ -10,7 +10,24 @@ from payments_processor.models import Payment
 from payments_processor.utils import uuid7
 
 
-def _make_payment(
+class MakePaymentFactory(Protocol):
+    def __call__(  # noqa: PLR0913
+        self,
+        *,
+        payment_id: UUID | None = ...,
+        amount: Decimal = ...,
+        currency: CurrencyEnum = ...,
+        description: str | None = ...,
+        meta: dict[str, Any] | None = ...,
+        status: PaymentStatusEnum = ...,
+        idempotency_key: str = ...,
+        webhook_url: str = ...,
+        processed_at: datetime | None = ...,
+        created_at: datetime | None = ...,
+    ) -> Payment: ...
+
+
+def _make_payment(  # noqa: PLR0913
     *,
     payment_id: UUID | None = None,
     amount: Decimal = Decimal("100.00"),
@@ -40,5 +57,5 @@ def _make_payment(
 
 
 @pytest.fixture
-def make_payment():
+def make_payment() -> MakePaymentFactory:
     return _make_payment

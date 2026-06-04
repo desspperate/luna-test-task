@@ -15,8 +15,9 @@ from payments_processor.errors import (
     PaymentNotFoundError,
     WebhookUrlNotAllowedError,
 )
+from payments_processor.models import Payment
 from payments_processor.services import PaymentService
-
+from tests.unit.conftest import MakePaymentFactory
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -29,15 +30,15 @@ class Doubles:
     outbox_repo: MagicMock
     ssrf_guard: MagicMock
     service: PaymentService
-    enqueue_payloads: list[dict[str, Any]] = field(default_factory=list)
+    enqueue_payloads: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
 
 def _build(
     *,
-    existing_by_key: Any = None,
-    created_payment: Any = None,
-    fetched_payment: Any = None,
-    updated_payment: Any = None,
+    existing_by_key: Payment | None = None,
+    created_payment: Payment | None = None,
+    fetched_payment: Payment | None = None,
+    updated_payment: Payment | None = None,
     ssrf_should_block: bool = False,
 ) -> Doubles:
     session = MagicMock()
@@ -79,9 +80,10 @@ def _build(
 # ---------------------------------------------------------------------------
 
 
-class TestCreatePayment_NewPayment:
+class TestCreatePaymentNewPayment:
     async def test_returns_created_payment_marked_as_new(
-        self, make_payment,
+        self,
+        make_payment: MakePaymentFactory,
     ) -> None:
         new_payment = make_payment()
         d = _build(created_payment=new_payment)
@@ -98,7 +100,7 @@ class TestCreatePayment_NewPayment:
         assert result is new_payment
         assert is_new is True
 
-    async def test_persists_payment_via_repository(self, make_payment) -> None:
+    async def test_persists_payment_via_repository(self, make_payment: MakePaymentFactory) -> None:
         new_payment = make_payment(
             amount=Decimal("250.00"),
             currency=CurrencyEnum.EUR,
@@ -125,7 +127,7 @@ class TestCreatePayment_NewPayment:
             webhook_url=new_payment.webhook_url,
         )
 
-    async def test_enqueues_outbox_event_with_payment_id(self, make_payment) -> None:
+    async def test_enqueues_outbox_event_with_payment_id(self, make_payment: MakePaymentFactory) -> None:
         new_payment = make_payment()
         d = _build(created_payment=new_payment)
 
@@ -146,7 +148,7 @@ class TestCreatePayment_NewPayment:
             payload={"payment_id": str(new_payment.id)},
         )
 
-    async def test_flushes_session_after_enqueue(self, make_payment) -> None:
+    async def test_flushes_session_after_enqueue(self, make_payment: MakePaymentFactory) -> None:
         d = _build(created_payment=make_payment())
 
         await d.service.create_payment(
@@ -160,8 +162,8 @@ class TestCreatePayment_NewPayment:
         d.payment_repo.session.flush.assert_awaited_once()
 
 
-class TestCreatePayment_Idempotency:
-    async def test_returns_existing_when_payload_matches(self, make_payment) -> None:
+class TestCreatePaymentIdempotency:
+    async def test_returns_existing_when_payload_matches(self, make_payment: MakePaymentFactory) -> None:
         existing = make_payment(idempotency_key="k1")
         d = _build(existing_by_key=existing)
 
@@ -189,7 +191,10 @@ class TestCreatePayment_Idempotency:
         ],
     )
     async def test_conflict_raised_when_payload_differs(
-        self, make_payment, differing_field: str, new_value: Any,
+        self,
+        make_payment: MakePaymentFactory,
+        differing_field: str,
+        new_value: Any,  # noqa: ANN401
     ) -> None:
         existing = make_payment(
             amount=Decimal("100.00"),
@@ -215,7 +220,8 @@ class TestCreatePayment_Idempotency:
         assert exc_info.value.idempotency_key == "k1"
 
     async def test_conflict_details_do_not_leak_field_values(
-        self, make_payment,
+        self,
+        make_payment: MakePaymentFactory,
     ) -> None:
         existing = make_payment(amount=Decimal("100"), idempotency_key="k1")
         d = _build(existing_by_key=existing)
@@ -235,7 +241,8 @@ class TestCreatePayment_Idempotency:
         assert "100" not in rendered
 
     async def test_description_and_meta_do_not_affect_idempotency(
-        self, make_payment,
+        self,
+        make_payment: MakePaymentFactory,
     ) -> None:
         """Only amount, currency, webhook_url participate in the match."""
         existing = make_payment(description="old", meta={"a": 1}, idempotency_key="k1")
@@ -253,7 +260,7 @@ class TestCreatePayment_Idempotency:
         assert is_new is False
 
 
-class TestCreatePayment_SSRFGuardOrdering:
+class TestCreatePaymentSSRFGuardOrdering:
     async def test_guard_runs_before_repository_lookup(self) -> None:
         d = _build(ssrf_should_block=True)
 
@@ -278,7 +285,7 @@ class TestCreatePayment_SSRFGuardOrdering:
 
 
 class TestGetPayment:
-    async def test_returns_payment_when_found(self, make_payment) -> None:
+    async def test_returns_payment_when_found(self, make_payment: MakePaymentFactory) -> None:
         payment = make_payment()
         d = _build(fetched_payment=payment)
 
@@ -309,7 +316,7 @@ class TestApplyProcessingOutcome:
     )
     async def test_maps_outcome_to_payment_status(
         self,
-        make_payment,
+        make_payment: MakePaymentFactory,
         outcome: ProcessingOutcomeEnum,
         expected_status: PaymentStatusEnum,
     ) -> None:
@@ -321,7 +328,8 @@ class TestApplyProcessingOutcome:
         assert update_kwargs["status"] == expected_status
 
     async def test_records_processing_timestamp_at_call_time(
-        self, make_payment,
+        self,
+        make_payment: MakePaymentFactory,
     ) -> None:
         d = _build(updated_payment=make_payment(status=PaymentStatusEnum.SUCCEEDED))
 
@@ -333,7 +341,13 @@ class TestApplyProcessingOutcome:
 
         update_kwargs = d.payment_repo.update_processing_outcome.await_args.kwargs
         assert update_kwargs["processed_at"] == datetime(
-            2026, 4, 1, 12, 34, 56, tzinfo=UTC,
+            2026,
+            4,
+            1,
+            12,
+            34,
+            56,
+            tzinfo=UTC,
         )
 
     async def test_raises_with_id_when_payment_disappeared(self) -> None:
@@ -348,20 +362,15 @@ class TestApplyProcessingOutcome:
         assert exc_info.value.payment_id == pid
 
 
-# ---------------------------------------------------------------------------
-# _ensure_idempotent_match (helper)
-# ---------------------------------------------------------------------------
-
-
 class TestEnsureIdempotentMatchHelper:
-    def test_no_conflict_returns_none(self, make_payment) -> None:
+    def test_no_conflict_returns_none(self, make_payment: MakePaymentFactory) -> None:
         existing = make_payment(
             amount=Decimal("100"),
             currency=CurrencyEnum.RUB,
             webhook_url="https://example.com/wh",
         )
         # Should not raise
-        PaymentService._ensure_idempotent_match(
+        PaymentService._ensure_idempotent_match(  # pyright: ignore[reportPrivateUsage]
             existing=existing,
             amount=Decimal("100"),
             currency=CurrencyEnum.RUB,
@@ -370,7 +379,8 @@ class TestEnsureIdempotentMatchHelper:
         )
 
     def test_raises_single_conflict_even_when_multiple_fields_differ(
-        self, make_payment,
+        self,
+        make_payment: MakePaymentFactory,
     ) -> None:
         existing = make_payment(
             amount=Decimal("100"),
@@ -378,7 +388,7 @@ class TestEnsureIdempotentMatchHelper:
             webhook_url="https://example.com/wh",
         )
         with pytest.raises(IdempotencyKeyConflictError) as exc_info:
-            PaymentService._ensure_idempotent_match(
+            PaymentService._ensure_idempotent_match(  # pyright: ignore[reportPrivateUsage]
                 existing=existing,
                 amount=Decimal("999"),
                 currency=CurrencyEnum.USD,

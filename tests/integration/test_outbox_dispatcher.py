@@ -1,19 +1,34 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from payments_processor.constants import PaymentsConstants
 from payments_processor.enums import OutboxStatusEnum
+from payments_processor.messaging import PaymentEventPublisher
 from payments_processor.models import Outbox
+from payments_processor.outbox_dispatcher.main import (
+    _process_batch,  # pyright: ignore[reportPrivateUsage]
+)
+from payments_processor.services import OutboxService
+
+if TYPE_CHECKING:
+    from dishka import AsyncContainer
 
 pytestmark = pytest.mark.integration
 
 
-async def _insert_pending_outbox(session, payment_id=None, payload=None):
+async def _insert_pending_outbox(
+    session: AsyncSession,
+    payment_id: UUID | None = None,
+    payload: dict[str, Any] | None = None,
+) -> tuple[UUID, str, dict[str, Any]]:
     pid = payment_id or uuid4()
     row = Outbox(
         aggregate_type=PaymentsConstants.PAYMENT_AGGREGATE_TYPE,
@@ -29,26 +44,21 @@ async def _insert_pending_outbox(session, payment_id=None, payload=None):
     return row.id, row.routing_key, row.payload
 
 
-async def _fetch_outbox(session_maker, outbox_id) -> Outbox:
+async def _fetch_outbox(
+    session_maker: async_sessionmaker[AsyncSession],
+    outbox_id: UUID,
+) -> Outbox:
     async with session_maker() as fresh:
-        return (
-            await fresh.execute(select(Outbox).where(Outbox.id == outbox_id))
-        ).scalar_one()
-
-
-async def _count_pending(session_maker) -> int:
-    async with session_maker() as fresh:
-        rows = (await fresh.execute(select(Outbox))).scalars().all()
-        return len([r for r in rows if r.status == OutboxStatusEnum.PENDING])
+        return (await fresh.execute(select(Outbox).where(Outbox.id == outbox_id))).scalar_one()
 
 
 class TestOutboxDispatcher:
     async def test_publishes_pending_and_marks_published(
-        self, pg_session, session_maker: async_sessionmaker, api_app,
+        self,
+        pg_session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession],
+        api_app: FastAPI,
     ) -> None:
-        from payments_processor.outbox_dispatcher.main import _process_batch
-        from payments_processor.messaging import PaymentEventPublisher
-
         row_id, routing_key, payload = await _insert_pending_outbox(pg_session)
 
         publisher = AsyncMock(spec=PaymentEventPublisher)
@@ -71,11 +81,11 @@ class TestOutboxDispatcher:
         assert refreshed.published_at is not None
 
     async def test_publisher_failure_bumps_attempt(
-        self, pg_session, session_maker: async_sessionmaker, api_app,
+        self,
+        pg_session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession],
+        api_app: FastAPI,
     ) -> None:
-        from payments_processor.outbox_dispatcher.main import _process_batch
-        from payments_processor.messaging import PaymentEventPublisher
-
         row_id, _, _ = await _insert_pending_outbox(pg_session)
 
         publisher = AsyncMock(spec=PaymentEventPublisher)
@@ -97,18 +107,18 @@ class TestOutboxDispatcher:
         assert refreshed.next_attempt_at > datetime.now(tz=UTC)
 
     async def test_skip_locked_prevents_double_processing(
-        self, pg_session, session_maker: async_sessionmaker, api_app,
+        self,
+        pg_session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession],
+        api_app: FastAPI,
     ) -> None:
-        from payments_processor.outbox_dispatcher.main import _process_batch
-        from payments_processor.messaging import PaymentEventPublisher
-
         for _ in range(4):
             await _insert_pending_outbox(pg_session)
 
         publisher = AsyncMock(spec=PaymentEventPublisher)
         container = api_app.state.container
 
-        async def batch():
+        async def batch() -> int:
             async with container() as request_container:
                 return await _process_batch(
                     request_container=request_container,
@@ -116,7 +126,6 @@ class TestOutboxDispatcher:
                     batch_size=2,
                 )
 
-        import asyncio
         results = await asyncio.gather(batch(), batch())
         assert sum(results) == 4
         assert publisher.publish.await_count == 4
@@ -127,11 +136,12 @@ class TestOutboxDispatcher:
         assert len(published) == 4
 
     async def test_future_next_attempt_not_picked_up(
-        self, pg_session, session_maker: async_sessionmaker, api_app,
+        self,
+        pg_session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession],
+        api_app: FastAPI,
     ) -> None:
-        from payments_processor.outbox_dispatcher.main import _process_batch
-        from payments_processor.messaging import PaymentEventPublisher
-
+        _ = session_maker
         row = Outbox(
             aggregate_type=PaymentsConstants.PAYMENT_AGGREGATE_TYPE,
             aggregate_id=uuid4(),
@@ -167,9 +177,13 @@ class TestOutboxBackoff:
             (10, 60.0),  # capped at OUTBOX_BACKOFF_MAX_SECONDS=60
         ],
     )
-    async def test_backoff_formula(self, api_app, attempts: int, expected: float) -> None:
-        from payments_processor.services import OutboxService
-
-        async with api_app.state.container() as request_container:
+    async def test_backoff_formula(
+        self,
+        api_app: FastAPI,
+        attempts: int,
+        expected: float,
+    ) -> None:
+        container = cast("AsyncContainer", api_app.state.container)
+        async with container() as request_container:
             svc = await request_container.get(OutboxService)
-            assert svc._compute_backoff_seconds(attempts=attempts) == expected
+            assert svc._compute_backoff_seconds(attempts=attempts) == expected  # pyright: ignore[reportPrivateUsage]

@@ -1,8 +1,9 @@
+from typing import Any
+
 import pytest
 
 from payments_processor.constants import PaymentsConstants
 from payments_processor.messaging import build_dlq_headers, build_retry_headers, get_retry_count
-
 
 COUNT_HEADER = PaymentsConstants.RETRY_COUNT_HEADER
 REASON_HEADER = PaymentsConstants.RETRY_REASON_HEADER
@@ -11,7 +12,7 @@ DLQ_REASON_HEADER = PaymentsConstants.DLQ_REASON_HEADER
 
 class TestGetRetryCount:
     @pytest.mark.parametrize("headers", [None, {}])
-    def test_returns_zero_when_no_headers(self, headers) -> None:
+    def test_returns_zero_when_no_headers(self, headers: dict[str, Any] | None) -> None:
         assert get_retry_count(headers=headers) == 0
 
     def test_returns_explicit_int_value(self) -> None:
@@ -44,7 +45,7 @@ class TestGetRetryCount:
             {"x-death": [{"count": "not an int"}]},
         ],
     )
-    def test_returns_zero_for_malformed_x_death(self, headers: dict) -> None:
+    def test_returns_zero_for_malformed_x_death(self, headers: dict[str, Any]) -> None:
         assert get_retry_count(headers=headers) == 0
 
 

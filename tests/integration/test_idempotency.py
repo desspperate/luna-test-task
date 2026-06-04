@@ -1,8 +1,11 @@
 import asyncio
+from typing import Any
 from uuid import UUID
 
 import pytest
+from httpx2 import AsyncClient
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from payments_processor.models import Outbox, Payment
 
@@ -12,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 class TestSameRequestReplay:
-    async def test_second_call_returns_same_payment_id(self, api_client) -> None:
+    async def test_second_call_returns_same_payment_id(self, api_client: AsyncClient) -> None:
         first = await api_client.post(
             "/api/v1/payments",
             json=payment_payload(),
@@ -26,7 +29,9 @@ class TestSameRequestReplay:
         assert first.json()["payment_id"] == second.json()["payment_id"]
 
     async def test_replay_does_not_create_extra_payment_row(
-        self, api_client, pg_session,
+        self,
+        api_client: AsyncClient,
+        pg_session: AsyncSession,
     ) -> None:
         for _ in range(3):
             await api_client.post(
@@ -38,7 +43,9 @@ class TestSameRequestReplay:
         assert count == 1
 
     async def test_replay_does_not_create_extra_outbox_row(
-        self, api_client, pg_session,
+        self,
+        api_client: AsyncClient,
+        pg_session: AsyncSession,
     ) -> None:
         for _ in range(3):
             await api_client.post(
@@ -60,7 +67,10 @@ class TestConflictingPayload:
         ],
     )
     async def test_changed_field_yields_409(
-        self, api_client, field: str, value: str,
+        self,
+        api_client: AsyncClient,
+        field: str,
+        value: str,
     ) -> None:
         key = f"conflict-{field}"
         first = await api_client.post(
@@ -79,7 +89,8 @@ class TestConflictingPayload:
         assert second.json()["code"] == "IDEMPOTENCY_KEY_CONFLICT"
 
     async def test_conflict_response_does_not_leak_field_values(
-        self, api_client,
+        self,
+        api_client: AsyncClient,
     ) -> None:
         await api_client.post(
             "/api/v1/payments",
@@ -98,9 +109,11 @@ class TestConflictingPayload:
 
 class TestConcurrentReplay:
     async def test_parallel_calls_create_one_payment(
-        self, api_client, pg_session,
+        self,
+        api_client: AsyncClient,
+        pg_session: AsyncSession,
     ) -> None:
-        async def post() -> dict:
+        async def post() -> dict[str, Any]:
             r = await api_client.post(
                 "/api/v1/payments",
                 json=payment_payload(),
@@ -120,9 +133,7 @@ class TestConcurrentReplay:
         assert count == 1
 
         # And one outbox row — no duplicate events under concurrency
-        outbox_count = (
-            await pg_session.execute(select(func.count(Outbox.id)))
-        ).scalar_one()
+        outbox_count = (await pg_session.execute(select(func.count(Outbox.id)))).scalar_one()
         assert outbox_count == 1
 
         # Sanity-check the surviving payment id is a UUID

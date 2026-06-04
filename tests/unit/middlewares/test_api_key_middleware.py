@@ -7,7 +7,6 @@ from payments_processor.constants import PaymentsConstants
 from payments_processor.error_handlers import register_error_handler
 from payments_processor.middlewares import register_api_key_middleware
 
-
 API_KEY = "test-key-must-be-32-chars-long!!"
 
 
@@ -17,31 +16,31 @@ def _make_app() -> FastAPI:
     register_error_handler(app)
 
     @app.get("/protected")
-    async def protected() -> dict[str, str]:
+    async def protected() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"ok": "yes"}
 
     @app.get("/health")
-    async def health() -> str:
+    async def health() -> str:  # pyright: ignore[reportUnusedFunction]
         return "ok"
 
     @app.get("/ready")
-    async def ready() -> dict[str, str]:
+    async def ready() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"status": "ready"}
 
     @app.get("/docs")
-    async def docs() -> str:
+    async def docs() -> str:  # pyright: ignore[reportUnusedFunction]
         return "docs"
 
     @app.get("/openapi.json")
-    async def openapi() -> dict[str, str]:
+    async def openapi() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"openapi": "3.1"}
 
     @app.get("/redoc")
-    async def redoc() -> str:
+    async def redoc() -> str:  # pyright: ignore[reportUnusedFunction]
         return "redoc"
 
     @app.get("/docs/oauth2-redirect")
-    async def oauth_redirect() -> str:
+    async def oauth_redirect() -> str:  # pyright: ignore[reportUnusedFunction]
         return "oauth"
 
     return app
@@ -72,21 +71,25 @@ class TestMissingKey:
 class TestInvalidKey:
     def test_returns_401(self, client: TestClient) -> None:
         resp = client.get(
-            "/protected", headers={PaymentsConstants.API_KEY_HEADER: "wrong"},
+            "/protected",
+            headers={PaymentsConstants.API_KEY_HEADER: "wrong"},
         )
         assert resp.status_code == 401
 
     def test_response_uses_documented_error_code(self, client: TestClient) -> None:
         resp = client.get(
-            "/protected", headers={PaymentsConstants.API_KEY_HEADER: "wrong"},
+            "/protected",
+            headers={PaymentsConstants.API_KEY_HEADER: "wrong"},
         )
         assert resp.json()["code"] == "API_KEY_INVALID"
 
     def test_response_does_not_echo_back_provided_or_expected(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get(
-            "/protected", headers={PaymentsConstants.API_KEY_HEADER: "wrong-attempt"},
+            "/protected",
+            headers={PaymentsConstants.API_KEY_HEADER: "wrong-attempt"},
         )
         assert "wrong-attempt" not in resp.text
         assert API_KEY not in resp.text
@@ -94,7 +97,8 @@ class TestInvalidKey:
     def test_same_length_but_wrong_value_still_rejected(self, client: TestClient) -> None:
         same_length_wrong = "X" * len(API_KEY)
         resp = client.get(
-            "/protected", headers={PaymentsConstants.API_KEY_HEADER: same_length_wrong},
+            "/protected",
+            headers={PaymentsConstants.API_KEY_HEADER: same_length_wrong},
         )
         assert resp.status_code == 401
         assert resp.json()["code"] == "API_KEY_INVALID"
@@ -120,7 +124,9 @@ class TestBypassPaths:
         ],
     )
     def test_listed_paths_skip_authentication(
-        self, client: TestClient, path: str,
+        self,
+        client: TestClient,
+        path: str,
     ) -> None:
         resp = client.get(path)
         assert resp.status_code == 200

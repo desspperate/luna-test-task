@@ -6,11 +6,14 @@ here; per-module helpers stay private to that module.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+if TYPE_CHECKING:
+    import httpx2
 
-def payment_payload(**overrides: Any) -> dict[str, Any]:
+
+def payment_payload(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401
     """Default payload for POST /api/v1/payments.
 
     All overrides accepted as kwargs (also lets you remove keys by passing
@@ -28,7 +31,7 @@ def payment_payload(**overrides: Any) -> dict[str, Any]:
 
 
 async def create_payment(
-    api_client: Any,
+    api_client: httpx2.AsyncClient,
     *,
     key: str,
     webhook_url: str = "https://example.com/wh",
@@ -45,7 +48,5 @@ async def create_payment(
         ),
         headers={"Idempotency-Key": key},
     )
-    assert resp.status_code == 202, (
-        f"expected 202 from /payments, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 202, f"expected 202 from /payments, got {resp.status_code}: {resp.text}"
     return UUID(resp.json()["payment_id"])

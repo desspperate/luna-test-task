@@ -12,21 +12,21 @@ from payments_processor.services import PaymentService
 
 class PaymentAction:
     def __init__(
-            self,
-            session: AsyncSession,
-            payment_service: PaymentService,
+        self,
+        session: AsyncSession,
+        payment_service: PaymentService,
     ) -> None:
         self.session = session
         self.payment_service = payment_service
 
-    async def create_payment(
-            self,
-            amount: Decimal,
-            currency: CurrencyEnum,
-            description: str | None,
-            meta: dict[str, Any] | None,
-            idempotency_key: str,
-            webhook_url: str,
+    async def create_payment(  # noqa: PLR0913
+        self,
+        amount: Decimal,
+        currency: CurrencyEnum,
+        description: str | None,
+        meta: dict[str, Any] | None,
+        idempotency_key: str,
+        webhook_url: str,
     ) -> Payment:
         payment, is_new = await self.payment_service.create_payment(
             amount=amount,

@@ -20,46 +20,51 @@ def _make_app() -> FastAPI:
     register_error_handler(app)
 
     @app.get("/not-found")
-    async def not_found() -> None:
+    async def not_found() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsNotFoundError(
-            code="X_NOT_FOUND", message="x not found", details={"id": 1},
+            code="X_NOT_FOUND",
+            message="x not found",
+            details={"id": 1},
         )
 
     @app.get("/validation")
-    async def validation() -> None:
+    async def validation() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsValidationError(code="X_INVALID", message="invalid")
 
     @app.get("/business")
-    async def business() -> None:
+    async def business() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsBusinessLogicError(code="X_RULE", message="rule violated")
 
     @app.get("/conflict")
-    async def conflict() -> None:
+    async def conflict() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsConflictError(
-            code="X_CONFLICT", message="conflict", details={"key": "k"},
+            code="X_CONFLICT",
+            message="conflict",
+            details={"key": "k"},
         )
 
     @app.get("/unauthorized")
-    async def unauthorized() -> None:
+    async def unauthorized() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsUnauthorizedError(code="UNAUTHED", message="unauthorized")
 
     @app.get("/forbidden")
-    async def forbidden() -> None:
+    async def forbidden() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsForbiddenError(code="FORBID", message="forbidden")
 
     @app.get("/external")
-    async def external() -> None:
+    async def external() -> None:  # pyright: ignore[reportUnusedFunction]
         raise PaymentsExternalServiceError(code="EXT", message="upstream broken")
 
     @app.get("/unexpected")
-    async def unexpected() -> None:
-        raise RuntimeError("boom secret_value=top-secret-token")
+    async def unexpected() -> None:  # pyright: ignore[reportUnusedFunction]
+        msg = "boom secret_value=top-secret-token"
+        raise RuntimeError(msg)
 
     class Body(BaseModel):
         n: int
 
     @app.post("/echo")
-    async def echo(b: Body) -> dict[str, int]:
+    async def echo(b: Body) -> dict[str, int]:  # pyright: ignore[reportUnusedFunction]
         return {"n": b.n}
 
     return app
@@ -84,7 +89,10 @@ class TestErrorMapping:
         ],
     )
     def test_payments_error_subclass_maps_to_expected_status(
-        self, client: TestClient, path: str, status_code: int,
+        self,
+        client: TestClient,
+        path: str,
+        status_code: int,
     ) -> None:
         resp = client.get(path)
         assert resp.status_code == status_code
@@ -116,7 +124,8 @@ class TestUnexpectedError:
         assert body["message"] == "Unexpected internal error"
 
     def test_does_not_leak_exception_message_or_traceback(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/unexpected")
         text = resp.text
@@ -128,7 +137,8 @@ class TestUnexpectedError:
 
 class TestRequestValidation:
     def test_pydantic_failure_returns_422_with_error_list(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.post("/echo", json={"n": "not-an-int"})
         assert resp.status_code == 422

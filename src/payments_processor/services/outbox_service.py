@@ -11,9 +11,9 @@ from payments_processor.repositories import OutboxRepository
 
 class OutboxService:
     def __init__(
-            self,
-            outbox_repository: OutboxRepository,
-            outbox_dispatcher_config: OutboxDispatcherConfig,
+        self,
+        outbox_repository: OutboxRepository,
+        outbox_dispatcher_config: OutboxDispatcherConfig,
     ) -> None:
         self.outbox_repository = outbox_repository
         self.outbox_dispatcher_config = outbox_dispatcher_config
@@ -41,11 +41,10 @@ class OutboxService:
             next_attempt_at=next_attempt_at,
         )
         logger.warning(
-            f"Outbox {outbox_id} attempt failed; next retry in {delay_seconds:.1f}s "
-            f"(attempts done: {attempts + 1})",
+            f"Outbox {outbox_id} attempt failed; next retry in {delay_seconds:.1f}s (attempts done: {attempts + 1})",
         )
 
     def _compute_backoff_seconds(self, attempts: int) -> float:
         initial = self.outbox_dispatcher_config.OUTBOX_BACKOFF_INITIAL_SECONDS
         cap = self.outbox_dispatcher_config.OUTBOX_BACKOFF_MAX_SECONDS
-        return min(cap, initial * (2 ** attempts))
+        return min(cap, initial * (2**attempts))

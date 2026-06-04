@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -22,7 +22,7 @@ from payments_processor.utils import HandleIntegrityHelpers, SSRFGuard, get_asyn
 
 
 @asynccontextmanager
-async def handle_payment_integrity() -> AsyncIterator[None]:
+async def handle_payment_integrity() -> AsyncGenerator[None]:
     try:
         yield
     except IntegrityError as e:
@@ -39,26 +39,26 @@ async def handle_payment_integrity() -> AsyncIterator[None]:
 
 class PaymentService:
     def __init__(
-            self,
-            payment_repository: PaymentRepository,
-            outbox_repository: OutboxRepository,
-            ssrf_guard: SSRFGuard,
+        self,
+        payment_repository: PaymentRepository,
+        outbox_repository: OutboxRepository,
+        ssrf_guard: SSRFGuard,
     ) -> None:
         self.payment_repository = payment_repository
         self.outbox_repository = outbox_repository
         self.ssrf_guard = ssrf_guard
 
-    async def create_payment(
-            self,
-            amount: Decimal,
-            currency: CurrencyEnum,
-            description: str | None,
-            meta: dict[str, Any] | None,
-            idempotency_key: str,
-            webhook_url: str,
+    async def create_payment(  # noqa: PLR0913
+        self,
+        amount: Decimal,
+        currency: CurrencyEnum,
+        description: str | None,
+        meta: dict[str, Any] | None,
+        idempotency_key: str,
+        webhook_url: str,
     ) -> tuple[Payment, bool]:
         """
-            :returns payment, is_new_payment
+        :returns payment, is_new_payment
         """
         logger.info(f"Creating payment with idempotency_key='{idempotency_key}'")
 
@@ -104,15 +104,11 @@ class PaymentService:
         return payment
 
     async def apply_processing_outcome(
-            self,
-            payment_id: UUID,
-            outcome: ProcessingOutcomeEnum,
+        self,
+        payment_id: UUID,
+        outcome: ProcessingOutcomeEnum,
     ) -> Payment:
-        status = (
-            PaymentStatusEnum.SUCCEEDED
-            if outcome == ProcessingOutcomeEnum.SUCCEEDED
-            else PaymentStatusEnum.FAILED
-        )
+        status = PaymentStatusEnum.SUCCEEDED if outcome == ProcessingOutcomeEnum.SUCCEEDED else PaymentStatusEnum.FAILED
         processed_at = datetime.now(tz=UTC)
         logger.info(f"Applying processing outcome to payment {payment_id}: status={status.name}")
         payment = await self.payment_repository.update_processing_outcome(
@@ -126,11 +122,11 @@ class PaymentService:
 
     @staticmethod
     def _ensure_idempotent_match(
-            existing: Payment,
-            amount: Decimal,
-            currency: CurrencyEnum,
-            webhook_url: str,
-            idempotency_key: str,
+        existing: Payment,
+        amount: Decimal,
+        currency: CurrencyEnum,
+        webhook_url: str,
+        idempotency_key: str,
     ) -> None:
         conflicting: list[str] = []
         if existing.amount != amount:

@@ -11,13 +11,13 @@ def get_retry_count(headers: Mapping[str, Any] | None) -> int:
     explicit = headers.get(PaymentsConstants.RETRY_COUNT_HEADER)
     if explicit is not None:
         try:
-            return int(cast(int | str, explicit))
+            return int(cast("int | str", explicit))
         except (TypeError, ValueError):
             return 0
 
-    x_death = headers.get("x-death")
+    x_death: list[Any] | None = headers.get("x-death")
     if isinstance(x_death, list) and len(x_death) > 0:
-        first = x_death[0]
+        first: dict[str, Any] = x_death[0]
         if isinstance(first, dict):
             count = first.get("count")
             if isinstance(count, int):

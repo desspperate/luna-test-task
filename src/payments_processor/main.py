@@ -1,5 +1,5 @@
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from dishka.integrations import fastapi as fastapi_integration
@@ -23,7 +23,7 @@ def create_app() -> FastAPI:
     container = make_payments_container(app_config_instance=app_config)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         logger.info("Starting up...")
 
         print_pd_settings(app_config)

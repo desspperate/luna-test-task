@@ -3,10 +3,10 @@ from typing import Any
 
 class PaymentsError(Exception):
     def __init__(
-            self,
-            code: str,
-            message: str,
-            details: dict[str, Any] | None = None,
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
     ) -> None:
         self.code = code
         self.message = message
@@ -19,9 +19,9 @@ class PaymentsUnexpectedError(PaymentsError):
     message: str = "Unexpected internal error"
 
     def __init__(
-            self,
-            code: str = "UNEXPECTED_ERROR",
-            message: str = "Unexpected internal error",
+        self,
+        code: str = "UNEXPECTED_ERROR",
+        message: str = "Unexpected internal error",
     ) -> None:
         self.code = code
         self.message = message

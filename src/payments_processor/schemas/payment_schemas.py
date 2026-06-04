@@ -28,10 +28,11 @@ class PaymentBase(BaseModel):
     @classmethod
     def _prevent_float_precision_loss(cls, v: JsonValue) -> Decimal:
         if not isinstance(v, str | Decimal):
-            raise ValueError(
+            error_message = (
                 "Passing the amount as a anything but float is prohibited due to loss of precision."
                 "Please pass the amount as a string (e.g., '1111122222333334.10')"
             )
+            raise ValueError(error_message)  # noqa: TRY004
         return Decimal(v)
 
     @field_validator("webhook_url", mode="after")

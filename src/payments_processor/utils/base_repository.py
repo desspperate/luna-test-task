@@ -19,23 +19,13 @@ class BaseRepository[ModelType: Base]:
         return await self.session.get(self.model, obj_id)
 
     async def list_all(
-            self,
-            skip: int = 0,
-            limit: int = 100,
-            **filters: str | bool | float | datetime | None,
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        **filters: str | bool | float | datetime | None,
     ) -> tuple[list[ModelType], int]:
-        statement = (
-            select(self.model)
-            .filter_by(**filters)
-            .offset(skip)
-            .limit(limit)
-            .order_by(self.model.created_at)
-        )
-        count_statement = (
-            select(func.count())
-            .select_from(self.model)
-            .filter_by(**filters)
-        )
+        statement = select(self.model).filter_by(**filters).offset(skip).limit(limit).order_by(self.model.created_at)
+        count_statement = select(func.count()).select_from(self.model).filter_by(**filters)
 
         result = await self.session.execute(statement)
         count_result = await self.session.execute(count_statement)
@@ -50,10 +40,6 @@ class BaseRepository[ModelType: Base]:
 
     async def delete_by_id(self, obj_id: UUID) -> UUID | None:
         id_column: Any = self.model.__table__.c["id"]
-        statement = (
-            delete(self.model)
-            .where(id_column == obj_id)
-            .returning(id_column)
-        )
+        statement = delete(self.model).where(id_column == obj_id).returning(id_column)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()

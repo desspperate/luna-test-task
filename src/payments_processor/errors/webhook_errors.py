@@ -10,10 +10,10 @@ class WebhookError(Exception):
 
 class WebhookSendError(WebhookError, PaymentsExternalServiceError):
     def __init__(
-            self,
-            payment_id: UUID | str,
-            reason: str,
-            status_code: int | None = None,
+        self,
+        payment_id: UUID | str,
+        reason: str,
+        status_code: int | None = None,
     ) -> None:
         self.payment_id = payment_id
         self.reason = reason
@@ -33,10 +33,10 @@ class WebhookSendError(WebhookError, PaymentsExternalServiceError):
 
 class WebhookUrlNotAllowedError(WebhookError, PaymentsValidationError):
     def __init__(
-            self,
-            url: str,
-            reason: str,
-            resolved_ip: str | None = None,
+        self,
+        url: str,
+        reason: str,
+        resolved_ip: str | None = None,
     ) -> None:
         self.url = url
         self.reason = reason

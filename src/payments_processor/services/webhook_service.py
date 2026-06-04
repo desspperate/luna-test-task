@@ -14,10 +14,10 @@ from payments_processor.utils import SSRFGuard, sign_webhook, uuid7
 
 class WebhookService:
     def __init__(
-            self,
-            http_client: httpx.AsyncClient,
-            webhook_config: WebhookConfig,
-            ssrf_guard: SSRFGuard,
+        self,
+        http_client: httpx.AsyncClient,
+        webhook_config: WebhookConfig,
+        ssrf_guard: SSRFGuard,
     ) -> None:
         self.http_client = http_client
         self.webhook_config = webhook_config
@@ -38,8 +38,7 @@ class WebhookService:
         headers = {
             "Content-Type": "application/json",
             "User-Agent": PaymentsConstants.WEBHOOK_USER_AGENT,
-            PaymentsConstants.WEBHOOK_SIGNATURE_HEADER:
-                f"{PaymentsConstants.WEBHOOK_SIGNATURE_PREFIX}{signature}",
+            PaymentsConstants.WEBHOOK_SIGNATURE_HEADER: f"{PaymentsConstants.WEBHOOK_SIGNATURE_PREFIX}{signature}",
             PaymentsConstants.WEBHOOK_TIMESTAMP_HEADER: str(ts),
             PaymentsConstants.WEBHOOK_ID_HEADER: str(event_id),
             PaymentsConstants.WEBHOOK_EVENT_TYPE_HEADER: PaymentsConstants.PAYMENT_PROCESSED_EVENT_TYPE,
