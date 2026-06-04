@@ -7,3 +7,7 @@ src/payments_processor.egg-info
 .installed
 .pytest_cache
 .ruff_cache
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
