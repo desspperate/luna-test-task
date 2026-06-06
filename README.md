@@ -35,11 +35,11 @@ Supporting libs: `dishka` (DI container shared across the three services), `logu
 - RabbitMQ delivers `payment.created` events to the consumer and feeds the retry/DLQ topology
 - Three independent services share the same image and DI container:
   - **API** — FastAPI write surface (`POST /api/v1/payments`, `GET /api/v1/payments/{id}`); idempotent via `Idempotency-Key`, guarded by a static `X-API-Key`
-  - **Outbox Dispatcher** — single-process loop that polls `outbox`, publishes to RabbitMQ, and marks rows `published` in the same transaction window
+  - **Outbox Dispatcher** — loop that picks pending rows whose `next_attempt_at <= now` with `SELECT … FOR UPDATE SKIP LOCKED`, publishes them, and marks them `published`; failed publishes bump `attempts` and slide `next_attempt_at` forward with exponential backoff
   - **Consumer** — FastStream-based worker that emulates processing, sends signed webhooks, and routes failures to retry / DLQ
 - Cross-system consistency:
   - **Transactional Outbox** — `INSERT INTO outbox` happens in the same DB transaction as the payment write; the dispatcher publishes to RabbitMQ asynchronously, so a crash never leaves "payment created in DB but no event"
-  - **Idempotency** — `idempotency_key` is uniquely indexed per merchant; replays return the original payment instead of creating a duplicate
+  - **Idempotency** — `idempotency_key` has a unique index; replays return the original payment instead of creating a duplicate (single-tenant deployment — a multi-tenant version would key on `(merchant_id, idempotency_key)`)
   - **At-least-once + retry topology** — failed webhook deliveries are republished to `payments.retry.{n}` with per-step TTL; exhausted retries land in the DLQ with the `x-dlq-reason` header
   - **Webhook integrity** — HMAC-SHA256 over `timestamp.body`, SSRF guard refuses private/loopback hosts unless `WEBHOOK_ALLOW_PRIVATE_HOSTS=1` (dev only)
 - All three services expose `/health` (liveness) and `/ready` (DB ping); workers additionally track a heartbeat so a stuck loop fails its probe
@@ -51,28 +51,32 @@ Supporting libs: `dishka` (DI container shared across the three services), `logu
 |-------------------|-----------------------------------|------------------------------------------------|
 | `id`              | `UUID` (UUIDv7) PK                | Time-ordered for index locality                |
 | `amount`          | `NUMERIC(20, 4)`                  | `Decimal` end-to-end; rejects floats           |
-| `currency`        | `CHAR(3)`                         | `RUB`, `USD`, `EUR`                            |
+| `currency`        | `VARCHAR(3) CHECK IN ('RUB','USD','EUR')` | Enum stored as text (`native_enum=False`)|
 | `description`     | `VARCHAR(1000) NULL`              |                                                |
 | `meta`            | `JSONB NULL`                      | Arbitrary merchant-supplied JSON               |
-| `status`          | `ENUM('pending','succeeded','failed')` | Default `pending`                         |
-| `idempotency_key` | `VARCHAR(255)`                    | Unique per merchant (currently single-tenant)  |
+| `status`          | `VARCHAR CHECK IN ('PENDING','SUCCEEDED','FAILED')` | Default `PENDING`                 |
+| `idempotency_key` | `VARCHAR(255)`                    | Unique (single-tenant; multi-tenant → composite with `merchant_id`) |
 | `webhook_url`     | `VARCHAR(2048)`                   | Validated `HttpUrl`, SSRF-guarded at delivery  |
 | `created_at`      | `TIMESTAMPTZ`                     | Set on insert                                  |
 | `updated_at`      | `TIMESTAMPTZ NULL`                | Bumped on every UPDATE                         |
 | `processed_at`    | `TIMESTAMPTZ NULL`                | Set when consumer finalizes status             |
 
 ### `outbox`
-| Column            | Type                              | Notes                                          |
-|-------------------|-----------------------------------|------------------------------------------------|
-| `id`              | `UUID` (UUIDv7) PK                |                                                |
-| `aggregate_type`  | `VARCHAR(64)`                     | `payment`                                      |
-| `aggregate_id`    | `UUID`                            | FK-shaped pointer to `payments.id`             |
-| `event_type`      | `VARCHAR(128)`                    | `payment.created`, `payment.processed`         |
-| `routing_key`     | `VARCHAR(128)`                    | RabbitMQ routing key                           |
-| `payload`         | `JSONB`                           | Event body                                     |
-| `status`          | `ENUM('pending','published')`     | Default `pending`                              |
-| `created_at`      | `TIMESTAMPTZ`                     |                                                |
-| `published_at`    | `TIMESTAMPTZ NULL`                | Set by the dispatcher                          |
+| Column            | Type                                                | Notes                                                                                                                                                                                                  |
+|-------------------|-----------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `id`              | `UUID` (UUIDv7) PK                                  |                                                                                                                                                                                                        |
+| `aggregate_type`  | `VARCHAR(64)`                                       | `payment`                                                                                                                                                                                              |
+| `aggregate_id`    | `UUID`                                              | FK-shaped pointer to `payments.id`                                                                                                                                                                     |
+| `event_type`      | `VARCHAR(128)`                                      | `payment.created`, `payment.processed`                                                                                                                                                                 |
+| `routing_key`     | `VARCHAR(128)`                                      | RabbitMQ routing key                                                                                                                                                                                   |
+| `payload`         | `JSONB`                                             | Event body                                                                                                                                                                                             |
+| `status`          | `VARCHAR CHECK IN ('PENDING','PUBLISHED','FAILED')` | Default `PENDING`. Only `PENDING` ↔ `PUBLISHED` are written by the dispatcher today — failures stay `PENDING` and back off via `next_attempt_at`; `FAILED` is defined in the schema but currently unused |
+| `attempts`        | `INTEGER`                                           | Default `0`; bumped on failed publish                                                                                                                                                                  |
+| `next_attempt_at` | `TIMESTAMPTZ`                                       | Earliest time the dispatcher will pick the row; slides forward on failure (`OUTBOX_BACKOFF_*`)                                                                                                         |
+| `last_error`      | `TEXT NULL`                                         | Stringified error from the last failed publish                                                                                                                                                         |
+| `created_at`      | `TIMESTAMPTZ`                                       |                                                                                                                                                                                                        |
+| `updated_at`      | `TIMESTAMPTZ NULL`                                  | Bumped on every UPDATE                                                                                                                                                                                 |
+| `published_at`    | `TIMESTAMPTZ NULL`                                  | Set by the dispatcher on success                                                                                                                                                                       |
 
 ## API
 
@@ -105,16 +109,16 @@ Response — `202 Accepted`:
 ```json
 {
   "payment_id": "0192f8e7-6d31-7b22-8a4f-0c2a0f4f9a01",
-  "status": "pending",
+  "status": "PENDING",
   "created_at": "2026-06-04T12:34:56.789012+00:00"
 }
 ```
 
 Error codes:
 - `401` — missing / invalid `X-API-Key`
-- `409` — same `Idempotency-Key` already used with a different payload
+- `409` — same `Idempotency-Key` already used with a different `amount`, `currency`, or `webhook_url` (changes to `description` / `meta` are ignored — replays return the original payment)
 - `422` — schema validation failed
-- `202` (replay) — same `Idempotency-Key` + same payload returns the original `payment_id`
+- `202` (replay) — same `Idempotency-Key` + matching `amount` / `currency` / `webhook_url` returns the original `payment_id`
 
 Example:
 ```shell
@@ -144,7 +148,7 @@ Response — `200 OK`:
   "description": "Order #4711",
   "meta": {"order_id": "4711"},
   "webhook_url": "https://merchant.example.com/hooks/payments",
-  "status": "succeeded",
+  "status": "SUCCEEDED",
   "idempotency_key": "8c0b3f1e-b2c5-4d4d-9c1a-7b1f0e2a4f33",
   "processed_at": "2026-06-04T12:35:01.456789+00:00",
   "created_at": "2026-06-04T12:34:56.789012+00:00",
@@ -171,7 +175,7 @@ Error codes:
 
 ### Flow
 1. API writes the payment + inserts an `outbox` row inside one DB transaction → returns `202`.
-2. Outbox dispatcher polls `outbox` rows where `status='pending'`, publishes them to the `payments` exchange with the row's `routing_key`, and marks them `published`. A crash between publish and DB update is safe: the next poll retries publishing (consumer is idempotent on the message-id boundary).
+2. Outbox dispatcher polls `outbox` rows where `status='pending' AND next_attempt_at <= now()` with `SELECT … FOR UPDATE SKIP LOCKED`, publishes them to the `payments` exchange with the row's `routing_key`, and marks them `published`. A crash between publish and DB commit is safe — the row stays `pending` and the next poll re-publishes; the consumer dedups by re-fetching the payment and skipping the processing step if `status != pending`. A publish failure bumps `attempts`, records `last_error`, and pushes `next_attempt_at` forward with exponential backoff (`OUTBOX_BACKOFF_INITIAL_SECONDS` → `…_MAX_SECONDS`).
 3. The consumer reads `payments.new`:
    - emulates processing for `2–5s` with `~90%` success / `~10%` failure (configurable via `CONSUMER_*` env);
    - writes the final status (`succeeded` / `failed`) + `processed_at`;
@@ -184,7 +188,7 @@ Error codes:
 Headers sent to the merchant URL:
 - `X-Signature: sha256=<hex>` — HMAC-SHA256 over `f"{X-Timestamp}.{raw_body}"` keyed by `WEBHOOK_SECRET`
 - `X-Timestamp: <unix seconds>` — for replay protection on the merchant side
-- `X-Webhook-Id: <uuid>` — stable per attempt; safe to dedup on
+- `X-Webhook-Id: <uuid>` — fresh UUIDv7 per delivery attempt; useful for log correlation. **Not a stable dedup key**: a single logical event (e.g. broker redelivery after a crash between POST and ack) yields different ids on each attempt. End-to-end dedup on the merchant side should key on `payment_id` + terminal `status`.
 - `X-Event-Type: payment.processed`
 - `User-Agent: LunaTestTask/1.0`
 
@@ -198,7 +202,7 @@ All runtime config goes through `.env` (loaded by docker-compose). See `.env.exa
 
 ## Layout
 - `make dev` — builds the image locally, mounts `src/payments_processor`, runs every service via `uvicorn --reload`
-- `make prod` — pulls `ghcr.io/desspperate/luna-test-task:latest` (built on GitHub Release), runs every service under `gunicorn` with `UvicornWorker`: API uses 4 workers, outbox-dispatcher / consumer pin to 1 worker (singleton broker connection and dispatcher loop — multiple workers would double-publish / double-consume)
+- `make prod` — pulls `ghcr.io/desspperate/luna-test-task:latest` (built on GitHub Release), runs every service under `gunicorn` with `UvicornWorker`: API uses 4 workers; outbox-dispatcher and consumer pin to 1 worker. The 1-worker choice is a footprint decision, not a correctness one — the dispatcher uses `SELECT … FOR UPDATE SKIP LOCKED` and the consumer is a competing consumer on `payments.new`, so both scale horizontally on their own; a single process per service just keeps the broker-connection count and DB-poll traffic minimal and makes the heartbeat probe trivial
 - `make configure` — interactive `.env` writer; `make stop` / `make clean` for teardown
 
 ## Testing
@@ -235,7 +239,6 @@ The scope here is intentionally narrow. In a real fintech setting the following 
 - **Resilience & safety nets**
   - Real DLQ consumer with replay tooling (operator UI / CLI), poison-message quarantine
   - Circuit breaker around webhook delivery (e.g. `purgatory`) so a single broken merchant doesn't saturate retry queues
-  - Outbox dispatcher leader election (Postgres advisory lock or Redis-based) so horizontal scaling doesn't double-publish
   - `pg_partman` partitioning on `payments` and `outbox` by month; archival job for `published` outbox rows
 - **Security & compliance**
   - mTLS between services, secret rotation via Vault / AWS Secrets Manager (no `.env` in prod)
@@ -245,8 +248,8 @@ The scope here is intentionally narrow. In a real fintech setting the following 
   - SBOM + signed images (cosign), Trivy / Grype in CI, Dependabot
 - **Data & money correctness**
   - Double-entry ledger as the canonical store (the current `payments` table becomes a projection); reconciliation jobs against PSP statements
-  - Money as `Decimal` end-to-end (already true here) + currency-aware rounding modes per scheme
-  - Exactly-once webhook delivery via consumer-side dedup table keyed by `webhook_id`
+  - Money as `Decimal` end-to-end (already true here); per-currency scale (JPY=0, USD=2, BHD=3) enforced at the schema layer instead of a single `NUMERIC(20,4)` for everything
+  - Stable per-payment `webhook_id` persisted in DB and reused across redeliveries so merchants can dedup deterministically (at-least-once on our side → effectively-once on theirs)
 - **Delivery**
   - Helm chart / Kustomize manifests, HPA on RabbitMQ queue depth, PDB for the API
   - Blue/green or canary via Argo Rollouts; DB migrations gated by `safe_migrations` style checks (no destructive DDL in the same release as code)
