@@ -98,7 +98,7 @@ exclude_lines = [
 
 [dependency-groups]
 dev = [
-    "aiohttp>=3.14.0",
+    "aiohttp>=3.14.1",
     "freezegun>=1.5.5",
     "httpx2>=2.3.0",
     "pyright>=1.1.410",
